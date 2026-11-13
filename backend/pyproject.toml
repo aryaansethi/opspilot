@@ -1,0 +1,70 @@
+[project]
+name = "opspilot-backend"
+version = "0.1.0"
+description = "OpsPilot AI backend: auth, workspaces, hybrid RAG, MCP-backed investigations"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "email-validator>=2.2",
+    "sqlalchemy[asyncio]>=2.0.36",
+    "asyncpg>=0.30",
+    "alembic>=1.14",
+    "pgvector>=0.3.6",
+    "argon2-cffi>=23.1",
+    "pyjwt>=2.10",
+    "boto3>=1.35",
+    "httpx>=0.28",
+    "openai>=1.55",
+    "pypdf>=5.1",
+    "structlog>=24.4",
+    "tiktoken>=0.8",
+    "mcp>=1.2",
+    "jsonschema>=4.23",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "boto3-stubs[s3,sqs]>=1.35",
+]
+rerank = [
+    "sentence-transformers>=3.3",
+]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+testpaths = ["tests"]
+markers = [
+    "integration: needs docker-compose services (postgres, localstack)",
+    "ollama: needs a running Ollama with the configured models",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "S"]
+ignore = ["S101", "B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S105", "S106", "E501"]
+"app/rag/generation/grounded.py" = ["E501"]
+"mcp_servers/**" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
