@@ -106,6 +106,8 @@ async def invoke_tool(
     )
     if integration is None:
         raise Forbidden(f"The {entry.server.kind} integration is not connected for this workspace")
+    if tool_name in (integration.disabled_tools or []):
+        raise Forbidden(f"Tool '{qualified_name}' is disabled for this workspace")
 
     invocation = ToolInvocation(
         workspace_id=ctx.workspace_id,

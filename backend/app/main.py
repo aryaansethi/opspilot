@@ -15,6 +15,7 @@ from app.core.logging import configure_logging
 from app.db.session import dispose_engine, get_engine, get_sessionmaker
 from app.documents.router import router as documents_router
 from app.integrations.router import router as integrations_router
+from app.investigations.router import router as investigations_router
 from app.mcp.registry import sync_all
 from app.search.router import router as search_router
 from app.workspaces.router import router as workspaces_router
@@ -63,6 +64,7 @@ def create_app() -> FastAPI:
     api.include_router(documents_router)
     api.include_router(search_router)
     api.include_router(integrations_router)
+    api.include_router(investigations_router)
     app.include_router(api)
     return app
 

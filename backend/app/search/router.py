@@ -1,5 +1,6 @@
 """Search (lexical / vector / hybrid), debug ranks, and grounded Q&A."""
 
+import time
 import uuid
 from typing import Any, Literal
 
@@ -171,12 +172,14 @@ class AskResponse(BaseModel):
     model: str | None
     retrieved_count: int
     removed_invalid_citations: list[str]
-    latency_ms: float
+    latency_ms: float  # whole request: retrieval + generation
+    retrieval_ms: float
 
 
 @router.post("/ask", response_model=AskResponse)
 async def ask(body: AskRequest, db: DB, ctx: Workspace) -> AskResponse:
     s = get_settings()
+    started = time.perf_counter()
     out = await hybrid_search(
         db,
         ctx.workspace_id,
@@ -218,5 +221,6 @@ async def ask(body: AskRequest, db: DB, ctx: Workspace) -> AskResponse:
         model=g.model,
         retrieved_count=len(out.results),
         removed_invalid_citations=g.removed_labels,
-        latency_ms=round(out.latency_ms, 1),
+        latency_ms=round((time.perf_counter() - started) * 1000, 1),
+        retrieval_ms=round(out.latency_ms, 1),
     )

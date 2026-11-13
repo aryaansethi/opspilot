@@ -115,6 +115,7 @@ async def test_ask_returns_validated_citations(client: AsyncClient) -> None:
         set_llm(None)
     assert r.status_code == 200, r.text
     body = r.json()
+    assert body["latency_ms"] >= body["retrieval_ms"] > 0
     assert body["insufficient_evidence"] is False
     assert len(body["claims"]) == 1  # the claim citing a non-retrieved label was dropped
     assert body["removed_invalid_citations"] == ["E9"]

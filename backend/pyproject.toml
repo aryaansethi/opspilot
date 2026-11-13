@@ -63,6 +63,8 @@ ignore = ["S101", "B008"]
 "tests/**" = ["S105", "S106", "E501"]
 "app/rag/generation/grounded.py" = ["E501"]
 "mcp_servers/**" = ["E501"]
+"app/investigations/**" = ["E501"]
+"app/models/investigations.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

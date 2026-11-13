@@ -18,7 +18,7 @@ export default function ReportPage({ params }: { params: Promise<{ id: string }>
   const report = useReport(id)
   const evidence = useEvidence(id)
   const evidenceList = useMemo(() => evidence.data ?? [], [evidence.data])
-  const evidenceIndex = useMemo(() => new Map(evidenceList.map((e, i) => [e.id, i + 1])), [evidenceList])
+  const evidenceIndex = useMemo(() => new Map<string, number | string>(evidenceList.map((e, i) => [e.id, e.label ?? i + 1])), [evidenceList])
 
   const jump = (evId: string) => document.getElementById(`evidence-${evId}`)?.scrollIntoView({ behavior: "smooth", block: "center" })
 

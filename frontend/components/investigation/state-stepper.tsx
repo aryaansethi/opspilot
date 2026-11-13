@@ -18,7 +18,7 @@ export const PIPELINE: { state: InvestigationState; label: string }[] = [
 type StepStatus = "done" | "current" | "waiting" | "failed" | "warning" | "pending"
 
 export function computeSteps(state: InvestigationState, events: InvestigationEvent[], failedSteps: string[] = []): StepStatus[] {
-  const reached = events.filter((e) => e.type === "state_changed").map((e) => e.payload.state as InvestigationState)
+  const reached = events.filter((e) => e.type === "state_changed").map((e) => (e.payload.to ?? e.payload.state) as InvestigationState)
   const lastPipelineIdx = Math.max(-1, ...reached.map((s) => PIPELINE.findIndex((p) => p.state === s)))
   const toolsIdx = PIPELINE.findIndex((p) => p.state === "RUN_READ_TOOLS")
 

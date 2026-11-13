@@ -22,6 +22,7 @@ class ToolPolicy:
 CATALOG: dict[str, dict[str, ToolPolicy]] = {
     "cloudwatch": {
         "list_log_groups": ToolPolicy("read", 10000, 16000),
+        "list_metrics": ToolPolicy("read", 10000, 32000),
         "filter_log_events": ToolPolicy("read", 20000, 96000),
         "get_metric_data": ToolPolicy("read", 15000, 64000),
         "describe_alarms": ToolPolicy("read", 10000, 32000),

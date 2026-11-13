@@ -1,0 +1,7 @@
+# OpsPilot's local chat model: qwen3:8b with a 16K context window.
+# Ollama's default (4096 tokens) is too small for investigation prompts, which
+# carry ~15 evidence excerpts; a truncated prompt silently drops evidence.
+# Create once:  ollama create opspilot-qwen3-8b -f docker/ollama/Modelfile
+FROM qwen3:8b
+PARAMETER num_ctx 16384
+PARAMETER temperature 0.1

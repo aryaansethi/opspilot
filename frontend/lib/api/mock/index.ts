@@ -593,7 +593,7 @@ export const mockApi: ApiContract = {
       await delay()
       const items = db.audit
         .filter((e) => !filters?.action || e.action.includes(filters.action))
-        .filter((e) => !filters?.actor || e.actor.display_name.toLowerCase().includes(filters.actor.toLowerCase()))
+        .filter((e) => !filters?.actor || (e.actor?.display_name ?? "").toLowerCase().includes(filters.actor.toLowerCase()))
         .filter((e) => !filters?.from || e.created_at >= filters.from)
         .filter((e) => !filters?.to || e.created_at <= filters.to)
       return { items: clone(items), next_cursor: null }

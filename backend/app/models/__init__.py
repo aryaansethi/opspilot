@@ -2,6 +2,14 @@
 
 from app.models.documents import Document, DocumentChunk, DocumentIngestionJob
 from app.models.identity import AuditEvent, RefreshToken, User, Workspace, WorkspaceMember
+from app.models.investigations import (
+    ActionApproval,
+    EvidenceItem,
+    Hypothesis,
+    Investigation,
+    InvestigationEvent,
+    InvestigationReport,
+)
 from app.models.tools import (
     ConnectedIntegration,
     McpServer,
@@ -10,6 +18,12 @@ from app.models.tools import (
 )
 
 __all__ = [
+    "ActionApproval",
+    "EvidenceItem",
+    "Hypothesis",
+    "Investigation",
+    "InvestigationEvent",
+    "InvestigationReport",
     "AuditEvent",
     "ConnectedIntegration",
     "McpServer",

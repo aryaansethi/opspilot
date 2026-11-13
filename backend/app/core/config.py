@@ -46,8 +46,9 @@ class Settings(BaseSettings):
     # --- LLM / embeddings (Ollama exposes an OpenAI-compatible API) ---
     llm_base_url: str = "http://localhost:11434/v1"
     llm_api_key: SecretStr = SecretStr("ollama")
-    llm_model: str = "qwen3:8b"
-    llm_timeout_seconds: float = 180.0
+    # qwen3:8b with a 16K context window; see docker/ollama/Modelfile
+    llm_model: str = "opspilot-qwen3-8b"
+    llm_timeout_seconds: float = 300.0
     # Qwen3 models "think" before answering by default; "/no_think" turns that off for speed.
     llm_prompt_suffix: str = " /no_think"
     embedding_model: str = "bge-m3"
@@ -57,6 +58,12 @@ class Settings(BaseSettings):
     # --- MCP servers (local processes; streamable HTTP) ---
     mcp_cloudwatch_url: str = "http://127.0.0.1:8101/mcp"
     mcp_github_url: str = "http://127.0.0.1:8102/mcp"
+
+    # --- investigations ---
+    sqs_investigate_queue: str = "opspilot-investigate"
+    investigation_timeout_seconds: int = 420
+    investigation_max_tool_calls: int = 12
+    investigation_max_window_hours: int = 24
 
     # --- retrieval ---
     chunk_target_tokens: int = 500

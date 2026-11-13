@@ -142,3 +142,14 @@ def test_simple_term_parsing() -> None:
     assert _simple_terms("ERROR -DEBUG") is None
     assert _simple_terms('{ $.level = "ERROR" }') is None
     assert _simple_terms("") is None
+
+
+async def test_list_metrics_for_service() -> None:
+    async with connect() as cw:
+        r = await call(
+            cw,
+            "list_metrics",
+            {"namespace": "OpsPilot/OrdersApi", "dimensions": {"Service": "orders-api"}},
+        )
+    names = {m["metric_name"] for m in r["metrics"]}
+    assert {"LatencyP95", "Http5xxCount", "DbPoolActiveConnections"} <= names

@@ -122,6 +122,8 @@ export type SourceSystem = "knowledge_base" | "github" | "cloudwatch" | "jira"
 
 export interface Evidence {
   id: UUID
+  /** Stable per-investigation label ("E1", "E2", …) used in report citations. */
+  label?: string
   source_system: SourceSystem
   title: string
   source_reference: string
@@ -174,7 +176,9 @@ export interface Investigation {
   state: InvestigationState
   missing_parameters?: MissingParameter[]
   failed_steps?: string[]
-  created_by: User
+  error?: string | null
+  plan?: { tasks?: string[]; log_search_terms?: string[]; rationale?: string; source?: "llm" | "default"; allowed_tasks?: string[] } | null
+  created_by: User | null
   created_at: ISODate
   updated_at: ISODate
 }
@@ -214,7 +218,8 @@ export interface ToolCall {
   status: "running" | "succeeded" | "failed" | "timeout" | "denied"
   duration_ms?: number
   result_bytes?: number
-  error?: string
+  error?: string | null
+  truncated?: boolean
   started_at: ISODate
 }
 
@@ -224,11 +229,15 @@ export interface ApprovalRequest {
   tool: string
   server: string
   arguments: Record<string, unknown>
+  kind?: string
   status: "pending" | "approved" | "rejected" | "executed" | "failed"
-  requested_by: User
-  decided_by?: User
-  decided_at?: ISODate
-  result?: { url?: string; key?: string }
+  requested_by: User | null
+  decided_by?: User | null
+  decided_at?: ISODate | null
+  result?: { url?: string; key?: string } | null
+  /** Why execution failed (e.g. the target tool isn't registered). */
+  error?: string | null
+  created_at?: ISODate
 }
 
 export interface JiraIssueFields {
@@ -254,6 +263,8 @@ export interface Report {
   recommended_diagnostics: string[]
   proposed_remediation: string[]
   unknowns: string[]
+  /** Model statements dropped by citation/number validation, kept for transparency. */
+  removed_by_validation?: { kind: "fact" | "hypothesis"; text: string; reason: string; cited?: string[] }[]
   tool_summary: { total: number; succeeded: number; failed: number }
   markdown: string
   generated_at: ISODate
@@ -299,10 +310,10 @@ export interface CreateIntegrationRequest {
 
 export interface AuditEvent {
   id: UUID
-  actor: User
+  actor: User | null
   action: string
   target_type: string
-  target_id: UUID
+  target_id: UUID | null
   metadata: Record<string, unknown>
   created_at: ISODate
 }

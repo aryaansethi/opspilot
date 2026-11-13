@@ -74,6 +74,9 @@ async def _tools_for(db: DB, kind: str) -> list[ToolOut]:
 
 
 async def _out(db: DB, i: ConnectedIntegration) -> IntegrationOut:
+    tools = await _tools_for(db, i.kind)
+    for t in tools:
+        t.enabled = t.enabled and t.name not in (i.disabled_tools or [])
     return IntegrationOut(
         id=i.id,
         kind=i.kind,
@@ -81,7 +84,7 @@ async def _out(db: DB, i: ConnectedIntegration) -> IntegrationOut:
         config=i.config,
         last_checked_at=i.last_checked_at,
         last_error=i.last_error,
-        tools=await _tools_for(db, i.kind),
+        tools=tools,
     )
 
 
@@ -237,3 +240,39 @@ async def list_invocations(
     if investigation_id:
         q = q.where(ToolInvocation.investigation_id == investigation_id)
     return list(await db.scalars(q.order_by(ToolInvocation.created_at.desc()).limit(limit)))
+
+
+class ToolSwitch(BaseModel):
+    enabled: bool
+
+
+@router.patch("/integrations/{integration_id}/tools/{tool}", response_model=IntegrationOut)
+async def set_tool_enabled(
+    integration_id: uuid.UUID, tool: str, body: ToolSwitch, db: DB, ctx: Workspace
+) -> IntegrationOut:
+    """Workspace owners can switch a registered tool off (or back on) for their workspace only."""
+    if ctx.role != "owner":
+        raise Forbidden("Only workspace owners can change tool settings")
+    i = await _get(db, ctx, integration_id)
+    known = {t.name: t for t in await _tools_for(db, i.kind)}
+    if tool not in known:
+        raise NotFound(f"Tool '{tool}' is not registered for {i.kind}")
+    if body.enabled and not known[tool].enabled:
+        raise Forbidden(f"Tool '{tool}' is disabled globally and cannot be enabled per workspace")
+    disabled = set(i.disabled_tools or [])
+    if body.enabled:
+        disabled.discard(tool)
+    else:
+        disabled.add(tool)
+    i.disabled_tools = sorted(disabled)
+    record(
+        db,
+        workspace_id=ctx.workspace_id,
+        actor_user_id=ctx.user.id,
+        action="integration.tool_toggled",
+        target_type="integration",
+        target_id=i.id,
+        metadata={"tool": tool, "enabled": body.enabled},
+    )
+    await db.commit()
+    return await _out(db, i)

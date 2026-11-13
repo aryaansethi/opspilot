@@ -35,7 +35,7 @@ export default function AuditPage() {
       <div className="mb-4 flex flex-wrap items-end gap-3">
         <div className="grid gap-1">
           <Label htmlFor="a-actor" className="text-xs">Actor</Label>
-          <Input id="a-actor" value={actor} onChange={(e) => setActor(e.target.value)} placeholder="Name" className="h-8 w-40" />
+          <Input id="a-actor" value={actor} onChange={(e) => setActor(e.target.value)} placeholder="Email" className="h-8 w-40" />
         </div>
         <div className="grid gap-1">
           <Label htmlFor="a-action" className="text-xs">Action</Label>
@@ -84,7 +84,7 @@ export default function AuditPage() {
                           </Button>
                         </TableCell>
                         <TableCell className="font-mono text-xs whitespace-nowrap">{absoluteTime(e.created_at)}</TableCell>
-                        <TableCell className="text-sm">{e.actor.display_name}</TableCell>
+                        <TableCell className="text-sm">{e.actor?.display_name ?? "System"}</TableCell>
                         <TableCell className="font-mono text-xs">{e.action}</TableCell>
                         <TableCell className="font-mono text-xs text-muted-foreground">
                           {e.target_type}:{e.target_id}

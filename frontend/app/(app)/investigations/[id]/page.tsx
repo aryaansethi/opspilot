@@ -29,6 +29,7 @@ import {
   useReport,
   useToolCalls,
 } from "@/lib/api/endpoints/investigations"
+import { humanize } from "@/lib/format"
 import { shortTime } from "@/lib/format"
 import { useInvestigationEvents } from "@/lib/sse"
 import type { SourceSystem } from "@/lib/types/api"
@@ -55,7 +56,7 @@ export default function InvestigationPage({ params }: { params: Promise<{ id: st
   const [jiraOpen, setJiraOpen] = useState(false)
 
   const evidenceList = useMemo(() => evidence.data ?? [], [evidence.data])
-  const evidenceIndex = useMemo(() => new Map(evidenceList.map((e, i) => [e.id, i + 1])), [evidenceList])
+  const evidenceIndex = useMemo(() => new Map<string, number | string>(evidenceList.map((e, i) => [e.id, e.label ?? i + 1])), [evidenceList])
 
   const openEvidence = (evId: string) => {
     setTab("evidence")
@@ -73,7 +74,7 @@ export default function InvestigationPage({ params }: { params: Promise<{ id: st
   const sources = Array.from(new Set(evidenceList.map((e) => e.source_system)))
   const shown = sourceFilter === "all" ? evidenceList : evidenceList.filter((e) => e.source_system === sourceFilter)
   const pendingApprovals = (approvals.data ?? []).filter((a) => a.status === "pending")
-  const kbCount = evidenceList.filter((e) => !sourceMeta[e.source_system].live).length
+  const kbCount = evidenceList.filter((e) => !sourceMeta[e.source_system]?.live).length
 
   return (
     <div className="space-y-4">
@@ -85,9 +86,10 @@ export default function InvestigationPage({ params }: { params: Promise<{ id: st
             <p className="font-medium text-warning">Partial investigation — some steps didn&apos;t complete</p>
             <ul className="mt-1 list-disc pl-4 text-muted-foreground">
               {(i.failed_steps?.length ? i.failed_steps : ["One or more tools failed"]).map((s) => (
-                <li key={s}>{s}</li>
+                <li key={s}>{humanize(s)}</li>
               ))}
             </ul>
+            {i.error && <p className="mt-1 font-mono text-xs text-muted-foreground">{i.error}</p>}
             <p className="mt-1 text-muted-foreground">Findings below are based only on the evidence that was collected.</p>
           </div>
         </div>
@@ -98,6 +100,7 @@ export default function InvestigationPage({ params }: { params: Promise<{ id: st
           <div className="text-sm">
             <p className="font-medium text-destructive">Investigation failed</p>
             <p className="mt-1 text-muted-foreground">{FAILURE_COPY[i.state]}</p>
+            {i.error && <p className="mt-1 font-mono text-xs text-muted-foreground">{i.error}</p>}
             <Button size="sm" variant="outline" className="mt-2" asChild>
               <Link href="/investigations/new">Start a new investigation</Link>
             </Button>

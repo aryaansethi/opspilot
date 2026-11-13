@@ -162,6 +162,26 @@ async def filter_log_events(
     }
 
 
+@mcp.tool(description="List metric names (and their dimensions) in an allowlisted namespace.")
+async def list_metrics(
+    namespace: Annotated[str, Field(max_length=256)],
+    dimensions: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    _check_namespace(namespace)
+    kwargs: dict[str, Any] = {"Namespace": namespace}
+    if dimensions:
+        kwargs["Dimensions"] = [{"Name": k, "Value": v} for k, v in dimensions.items()]
+    resp = await asyncio.to_thread(_client("cloudwatch").list_metrics, **kwargs)
+    seen: dict[tuple[str, tuple[tuple[str, str], ...]], dict[str, Any]] = {}
+    for m in resp.get("Metrics", [])[:200]:
+        dims = tuple(sorted((d["Name"], d["Value"]) for d in m.get("Dimensions", [])))
+        seen[(m["MetricName"], dims)] = {"metric_name": m["MetricName"], "dimensions": dict(dims)}
+    return {
+        "namespace": namespace,
+        "metrics": sorted(seen.values(), key=lambda x: x["metric_name"]),
+    }
+
+
 @mcp.tool(description="Get a CloudWatch metric time series for an allowlisted namespace.")
 async def get_metric_data(
     namespace: Annotated[str, Field(max_length=256)],

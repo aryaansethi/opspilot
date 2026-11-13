@@ -5,12 +5,12 @@ import { shortTime } from "@/lib/format"
 import type { Evidence } from "@/lib/types/api"
 import { cn } from "@/lib/utils"
 
-export function EvidenceCard({ evidence, index, highlighted, className }: { evidence: Evidence; index?: number; highlighted?: boolean; className?: string }) {
+export function EvidenceCard({ evidence, index, highlighted, className }: { evidence: Evidence; index?: number | string; highlighted?: boolean; className?: string }) {
   const e = evidence
   return (
     <article id={`evidence-${e.id}`} className={cn("rounded-lg border bg-card p-3.5 transition-colors", highlighted && "border-primary ring-1 ring-primary/40", className)}>
       <div className="flex flex-wrap items-center gap-2">
-        {index !== undefined && <span className="font-mono text-[11px] text-muted-foreground">[{index}]</span>}
+        {index != null && <span className="font-mono text-[11px] text-muted-foreground">[{index}]</span>}
         <SourceBadge source={e.source_system} />
         <span className="ml-auto text-xs text-muted-foreground">
           {e.observed_at ? <RelativeTime iso={e.observed_at} /> : null}

@@ -18,7 +18,6 @@ import type { InvestigationState } from "@/lib/types/api"
 
 const STATE_FILTERS: { value: InvestigationState; label: string }[] = [
   { value: "AWAITING_PARAMETERS", label: "Needs input" },
-  { value: "AWAITING_ACTION", label: "Report ready" },
   { value: "COMPLETED", label: "Completed" },
   { value: "PARTIAL", label: "Partial" },
   { value: "FAILED_LLM", label: "Failed (LLM)" },
@@ -90,7 +89,7 @@ export default function InvestigationsPage() {
                   <TableCell>
                     <InvestigationStateBadge state={i.state} />
                   </TableCell>
-                  <TableCell className="hidden text-xs lg:table-cell">{i.created_by.display_name}</TableCell>
+                  <TableCell className="hidden text-xs lg:table-cell">{i.created_by?.display_name ?? "—"}</TableCell>
                   <TableCell className="hidden text-xs text-muted-foreground sm:table-cell">
                     <RelativeTime iso={i.updated_at} />
                   </TableCell>

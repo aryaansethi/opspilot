@@ -13,6 +13,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -70,6 +71,10 @@ class ConnectedIntegration(IdMixin, TimestampMixin, WorkspaceScoped, Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="unchecked")
     last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_error: Mapped[str | None] = mapped_column(Text)
+    # Per-workspace switches on top of the global registry (PATCH /integrations/{id}/tools/{tool}).
+    disabled_tools: Mapped[list[str]] = mapped_column(
+        JSONB, nullable=False, default=list, server_default=text("'[]'::jsonb")
+    )
 
 
 class ToolInvocation(IdMixin, TimestampMixin, WorkspaceScoped, Base):

@@ -24,7 +24,8 @@ export function ApprovalCard({ approval }: { approval: ApprovalRequest }) {
     try {
       const res = await approve.mutateAsync(a.id)
       setConfirm(false)
-      toast.success(res.result?.key ? `Created ${res.result.key}` : "Action approved")
+      if (res.status === "failed") toast.error(res.error ?? "Approved, but the action failed to execute")
+      else toast.success(res.result?.key ? `Created ${res.result.key}` : "Action approved")
     } catch (e) {
       toast.error(errorMessage(e))
     }
@@ -55,7 +56,7 @@ export function ApprovalCard({ approval }: { approval: ApprovalRequest }) {
       <div className="space-y-2 p-3">
         <p className="text-[11px] text-muted-foreground">Exact arguments that will be sent</p>
         <KeyValueList value={a.arguments} />
-        <p className="text-[11px] text-muted-foreground">Requested by {a.requested_by.display_name}</p>
+        <p className="text-[11px] text-muted-foreground">Requested by {a.requested_by?.display_name ?? "unknown"}</p>
         {a.status === "pending" ? (
           <div className="flex gap-2 pt-1">
             <Button size="sm" className="flex-1" onClick={() => setConfirm(true)}>
@@ -76,6 +77,11 @@ export function ApprovalCard({ approval }: { approval: ApprovalRequest }) {
                     · <RelativeTime iso={a.decided_at} />
                   </>
                 )}
+              </p>
+            )}
+            {a.status === "failed" && a.error && (
+              <p role="alert" className="mt-1 rounded border border-destructive/30 bg-destructive/10 px-2 py-1 font-mono text-[11px] text-destructive">
+                {a.error}
               </p>
             )}
             {a.result?.url && (

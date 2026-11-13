@@ -11,7 +11,7 @@ export function guardRootCause(text: string, status: Hypothesis["status"]) {
   return status === "confirmed" ? text : text.replace(/\broot[- ]cause\b/gi, "possible cause")
 }
 
-export function HypothesisCard({ h, evidenceIndex, onOpenEvidence }: { h: Hypothesis; evidenceIndex: Map<string, number>; onOpenEvidence: (id: string) => void }) {
+export function HypothesisCard({ h, evidenceIndex, onOpenEvidence }: { h: Hypothesis; evidenceIndex: Map<string, number | string>; onOpenEvidence: (id: string) => void }) {
   return (
     <article className="rounded-lg border border-dashed border-primary/40 bg-primary/[0.03] p-4">
       <div className="mb-2 flex items-center gap-2">

@@ -13,7 +13,7 @@ Runs **entirely locally at zero cost**: Docker Compose (Postgres + pgvector, Loc
 | 3. Hybrid search + grounded Q&A | Done, tested |
 | 4. MCP: CloudWatch server + backend MCP layer | Done, tested |
 | 4b. MCP: GitHub server | Done, tested with a simulated GitHub API; live check pending token |
-| 5. Investigation workflow | Planned |
+| 5. Investigation workflow (state machine, SSE, approvals, audit) | Done, tested; live run on local model |
 | 6. Evaluation | Planned |
 | 7. Terraform / CI | Planned |
 | Frontend (Next.js) | In progress in `frontend/` |
@@ -22,7 +22,9 @@ Runs **entirely locally at zero cost**: Docker Compose (Postgres + pgvector, Loc
 
 - Docker (OrbStack or Docker Desktop)
 - [uv](https://docs.astral.sh/uv/) and Python 3.12 (`uv python install 3.12`)
-- [Ollama](https://ollama.com): `ollama pull bge-m3` and `ollama pull qwen3:8b`
+- [Ollama](https://ollama.com): `ollama pull bge-m3`, `ollama pull qwen3:8b`, then
+  `ollama create opspilot-qwen3-8b -f docker/ollama/Modelfile` (same model with a 16K context window;
+  Ollama's 4K default silently truncates investigation prompts)
 
 ## Run locally
 

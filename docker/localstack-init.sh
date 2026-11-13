@@ -8,3 +8,8 @@ DLQ_ARN=$(awslocal sqs get-queue-attributes --queue-url http://localhost:4566/00
 awslocal sqs create-queue --queue-name opspilot-ingest \
   --attributes "{\"VisibilityTimeout\":\"300\",\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"$DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"3\\\"}\"}" >/dev/null
 echo "opspilot localstack resources ready"
+awslocal sqs create-queue --queue-name opspilot-investigate-dlq >/dev/null
+INV_DLQ_ARN=$(awslocal sqs get-queue-attributes --queue-url http://localhost:4566/000000000000/opspilot-investigate-dlq --attribute-names QueueArn --query Attributes.QueueArn --output text)
+awslocal sqs create-queue --queue-name opspilot-investigate \
+  --attributes "{\"VisibilityTimeout\":\"600\",\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"$INV_DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"2\\\"}\"}" >/dev/null
+echo "opspilot investigate queue ready"
