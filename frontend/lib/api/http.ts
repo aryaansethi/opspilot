@@ -16,6 +16,7 @@ import type {
   Investigation,
   Page,
   Report,
+  SearchFilters,
   SearchResponse,
   ToolCall,
   UploadUrlResponse,
@@ -23,6 +24,17 @@ import type {
   Workspace,
 } from "@/lib/types/api"
 import { ApiError } from "./client"
+
+/** The backend takes lists (source_types/services/environments); the UI filters by one value each. */
+function toBackendFilters(f?: SearchFilters) {
+  if (!f) return undefined
+  const out = {
+    ...(f.source_type ? { source_types: [f.source_type] } : {}),
+    ...(f.service ? { services: [f.service] } : {}),
+    ...(f.environment ? { environments: [f.environment] } : {}),
+  }
+  return Object.keys(out).length ? out : undefined
+}
 
 /** Real backend implementation. Paths match ARCHITECTURE.md §6. */
 export const httpApi: ApiContract = {
@@ -46,7 +58,11 @@ export const httpApi: ApiContract = {
   documents: {
     list: (params) => request<Page<Document>>("/documents", { query: { ...params } }),
     get: (id) => request<Document>(`/documents/${id}`),
-    chunks: (id) => request<DocumentChunk[]>(`/documents/${id}/chunks`),
+    chunks: async (id) => {
+      // Backend returns the full chunk text as `content`.
+      const rows = await request<(Omit<DocumentChunk, "excerpt"> & { content?: string; excerpt?: string })[]>(`/documents/${id}/chunks`)
+      return rows.map(({ content, excerpt, ...c }) => ({ ...c, excerpt: excerpt ?? content ?? "" }))
+    },
     status: (id) => request<DocumentStatus>(`/documents/${id}/status`),
     uploadUrl: (input) => request<UploadUrlResponse>("/documents/upload-url", { method: "POST", body: input }),
     uploadFile: (target, file, onProgress) => uploadToPresignedUrl(target.upload_url, target.headers, file, onProgress),
@@ -55,9 +71,9 @@ export const httpApi: ApiContract = {
     reindex: (id) => request<Document>(`/documents/${id}/reindex`, { method: "POST" }),
   },
   search: {
-    search: (input) => request<SearchResponse>("/search", { method: "POST", body: input }),
-    debug: (input) => request<SearchResponse>("/search/debug", { method: "POST", body: input }),
-    ask: (input) => request<AskResponse>("/ask", { method: "POST", body: input }),
+    search: (input) => request<SearchResponse>("/search", { method: "POST", body: { ...input, filters: toBackendFilters(input.filters) } }),
+    debug: (input) => request<SearchResponse>("/search/debug", { method: "POST", body: { ...input, filters: toBackendFilters(input.filters) } }),
+    ask: (input) => request<AskResponse>("/ask", { method: "POST", body: { ...input, filters: toBackendFilters(input.filters) } }),
   },
   investigations: {
     list: (params) => request<Page<Investigation>>("/investigations", { query: { ...params } }),

@@ -31,8 +31,8 @@ export function ToolCallItem({ call }: { call: ToolCall }) {
       <CollapsibleContent className="space-y-2 border-t px-2.5 py-2">
         <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
           <AccessBadge access={call.access} />
-          {call.duration_ms !== undefined && <span>{call.duration_ms} ms</span>}
-          {call.result_bytes !== undefined && <span>{formatBytes(call.result_bytes)} returned</span>}
+          {call.duration_ms != null && <span>{call.duration_ms} ms</span>}
+          {call.result_bytes != null && <span>{formatBytes(call.result_bytes)} returned</span>}
         </div>
         <p className="text-[11px] text-muted-foreground">Arguments (redacted)</p>
         <JsonViewer value={call.arguments_redacted} />

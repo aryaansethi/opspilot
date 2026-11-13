@@ -29,7 +29,7 @@ export function EvidenceCard({ evidence, index, highlighted, className }: { evid
         {e.retrieval_method && (
           <span>
             via <span className="font-mono">{e.retrieval_method}</span>
-            {e.rank !== undefined && ` · rank ${e.rank}`}
+            {e.rank != null && ` · rank ${e.rank}`}
           </span>
         )}
         {e.url && (

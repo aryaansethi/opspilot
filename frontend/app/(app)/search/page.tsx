@@ -30,7 +30,10 @@ const MODES: { value: SearchMode; label: string }[] = [
 
 export default function SearchPage() {
   const [tab, setTab] = useState<"search" | "ask">("search")
-  const [query, setQuery] = useState("")
+  // Search and Ask keep separate text so switching tabs never merges a query into a question.
+  const [texts, setTexts] = useState({ search: "", ask: "" })
+  const query = texts[tab]
+  const setQuery = (v: string) => setTexts((t) => ({ ...t, [tab]: v }))
   const [submitted, setSubmitted] = useState("")
   const [mode, setMode] = useState<SearchMode>("hybrid")
   const [rerank, setRerank] = useState(false)
@@ -190,10 +193,10 @@ export default function SearchPage() {
                       <span className="text-sm font-medium">{r.document_title}</span>
                       <span className="ml-auto font-mono text-[11px] text-muted-foreground">score {r.score.toFixed(4)}</span>
                     </div>
-                    {(r.section_path || r.page_start !== undefined) && (
+                    {(r.section_path || r.page_start != null) && (
                       <p className="mt-1 text-xs text-muted-foreground">
                         {r.section_path}
-                        {r.page_start !== undefined && ` · p.${r.page_start}`}
+                        {r.page_start != null && ` · p.${r.page_start}`}
                       </p>
                     )}
                     <p className="mt-2 text-sm leading-relaxed">

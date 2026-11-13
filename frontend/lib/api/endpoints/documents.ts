@@ -9,6 +9,15 @@ import { qk } from "./keys"
 
 const isBusy = (s: string) => s === "pending_upload" || s === "queued" || s === "processing"
 
+/** Browsers often report "" for .md files; the backend only accepts these three types. */
+function mimeFor(file: File): string {
+  const ext = file.name.toLowerCase().split(".").pop()
+  if (ext === "pdf") return "application/pdf"
+  if (ext === "md" || ext === "markdown") return "text/markdown"
+  if (ext === "txt") return "text/plain"
+  return file.type || "application/octet-stream"
+}
+
 export function useDocuments(params?: DocumentListParams) {
   const ws = useWorkspaceId()
   return useQuery({
@@ -52,7 +61,7 @@ export function useUploadDocument() {
     mutationFn: async ({ file, meta, onProgress }: { file: File; meta: Omit<UploadUrlRequest, "filename" | "mime_type" | "size_bytes">; onProgress: (stage: "uploading" | "finalizing", pct: number) => void }) => {
       const target = await api.documents.uploadUrl({
         filename: file.name,
-        mime_type: file.type || "application/octet-stream",
+        mime_type: mimeFor(file),
         size_bytes: file.size,
         ...meta,
       })

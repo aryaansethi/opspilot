@@ -32,14 +32,13 @@ function ConfigView({ i }: { i: Integration }) {
   const rows: [string, string[]][] =
     i.kind === "github"
       ? [
-          ["Organization", list(c.organization)],
           ["Repositories", list(c.repositories)],
         ]
       : i.kind === "cloudwatch"
         ? [
             ["Region", list(c.region)],
             ["Log groups", list(c.log_groups)],
-            ["Metric namespaces", list(c.metric_namespaces)],
+            ["Metric namespaces", list(c.namespaces)],
           ]
         : [["Projects", list(c.projects)]]
   return (
@@ -154,22 +153,20 @@ function ConnectDialog({ kind, onOpenChange }: { kind: IntegrationKind | null; o
   const [a, setA] = useState("")
   const [b, setB] = useState("")
   const [c, setC] = useState("")
-  const [secret, setSecret] = useState("")
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     if (!kind) return
     const config =
       kind === "github"
-        ? { organization: a.trim(), repositories: splitList(b) }
-        : { region: a.trim(), log_groups: splitList(b), metric_namespaces: splitList(c) }
+        ? { repositories: splitList(b) }
+        : { ...(a.trim() ? { region: a.trim() } : {}), log_groups: splitList(b), namespaces: splitList(c) }
     try {
-      await create.mutateAsync({ kind, config, secret: secret || undefined })
+      await create.mutateAsync({ kind, config })
       toast.success(`${META[kind].name} connected`)
       setA("")
       setB("")
       setC("")
-      setSecret("")
       onOpenChange(false)
     } catch (err) {
       toast.error(errorMessage(err))
@@ -181,29 +178,22 @@ function ConnectDialog({ kind, onOpenChange }: { kind: IntegrationKind | null; o
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Connect {kind ? META[kind].name : ""}</DialogTitle>
-          <DialogDescription>Read-only access, limited to the allowlist below. Credentials are stored server-side and never shown again.</DialogDescription>
+          <DialogDescription>Read-only access, limited to the allowlist below. Credentials stay on the backend.</DialogDescription>
         </DialogHeader>
         <form onSubmit={submit} className="grid gap-3">
           {kind === "github" ? (
             <>
               <div className="grid gap-1.5">
-                <Label htmlFor="c-org">Organization</Label>
-                <Input id="c-org" value={a} onChange={(e) => setA(e.target.value)} placeholder="acme" required />
-              </div>
-              <div className="grid gap-1.5">
                 <Label htmlFor="c-repos">Allowed repositories (comma or newline separated)</Label>
                 <Input id="c-repos" value={b} onChange={(e) => setB(e.target.value)} placeholder="acme/orders-api, acme/billing-svc" required className="font-mono" />
               </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="c-token">Fine-grained token (read-only)</Label>
-                <Input id="c-token" type="password" autoComplete="off" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder="Paste token — write-only" required />
-              </div>
+              <p className="text-xs text-muted-foreground">Uses the read-only GitHub token configured on the backend — no token is entered here.</p>
             </>
           ) : (
             <>
               <div className="grid gap-1.5">
                 <Label htmlFor="c-region">AWS region</Label>
-                <Input id="c-region" value={a} onChange={(e) => setA(e.target.value)} placeholder="us-east-1" required className="font-mono" />
+                <Input id="c-region" value={a} onChange={(e) => setA(e.target.value)} placeholder="us-east-1 (optional)" className="font-mono" />
               </div>
               <div className="grid gap-1.5">
                 <Label htmlFor="c-lg">Allowed log groups</Label>

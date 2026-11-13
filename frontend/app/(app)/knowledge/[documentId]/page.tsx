@@ -75,7 +75,7 @@ export default function DocumentPage({ params }: { params: Promise<{ documentId:
                     <div className="mb-1.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       <span className="font-mono">#{c.chunk_index}</span>
                       {c.section_path && <span>{c.section_path}</span>}
-                      {c.page_start !== undefined && (
+                      {c.page_start != null && (
                         <span>
                           p.{c.page_start}
                           {c.page_end && c.page_end !== c.page_start ? `–${c.page_end}` : ""}
