@@ -1,15 +1,19 @@
 # OpsPilot AI — Frontend
 
 Next.js 15 (App Router) client for OpsPilot AI. All business logic lives in the FastAPI backend — this app only renders it.
-See `../ARCHITECTURE.md` §3 for the design and `../V0_FRONTEND_PROMPT.md` for the full screen spec.
+See `../ARCHITECTURE.md` §3 for the design and `../V0_FRONTEND_PROMPT.md` for the original screen spec.
+
+**Status:** every screen runs against the real backend (auth, knowledge base, search and Ask, investigations with live events, approvals, integrations, audit log, evaluations). Mock mode remains for previews without a backend.
 
 ## Quick start
 
 ```bash
 npm install
-cp .env.example .env.local   # then edit
+cp .env.example .env.local   # defaults to the real backend at http://localhost:8000/api/v1
 npm run dev                  # http://localhost:3000
 ```
+
+Start the backend first (see `../README.md`). Use port 3000: the backend's CORS and the LocalStack bucket CORS allow `http://localhost:3000`.
 
 | Script | What it does |
 |---|---|
@@ -32,7 +36,7 @@ In mock mode:
 - Any email + a password of 8+ characters signs you in (pre-filled on the login page).
 - New investigations run through the full state machine on timers, streaming simulated events. Leave out the service or time range to see the "needs input" step.
 - Uploads go through the 3-step flow (upload URL → PUT → complete) and finish indexing after ~5 s.
-- Evaluation numbers are invented placeholders for layout only — never quote them.
+- Evaluation numbers are invented placeholders for layout only — never quote them. Real numbers come from `POST /evaluations/run` on the backend.
 
 Components never import mock data directly; they only use the hooks in `lib/api/endpoints/`.
 
@@ -43,19 +47,27 @@ Components never import mock data directly; they only use the hooks in `lib/api/
 - **Errors**: `{ "error": { code, message, details } }` responses become `ApiError` (`lib/api/client.ts`).
 - **Live progress**: `lib/sse.ts` reads `GET /investigations/{id}/events` with `fetch` + `ReadableStream` (EventSource can't send `Authorization`), reconnects with `Last-Event-ID`, and invalidates the related TanStack Query caches on each event.
 
-### Endpoints the frontend uses beyond ARCHITECTURE.md §6
+### Adapting to the backend
 
-The backend needs these too:
+`lib/api/http.ts` is the only place that knows backend wire details. It currently:
 
-| Endpoint | Used by |
-|---|---|
-| `GET /documents/{id}/chunks` → `DocumentChunk[]` | Document detail page |
-| `GET /approvals?status=pending` → `ApprovalRequest[]` | Dashboard + sidebar pending count |
-| `PATCH /integrations/{id}/tools/{tool}` `{ enabled }` → `Integration` | Tool enable toggles |
+- maps chunk `content` → `excerpt` for the document detail page;
+- sends search/ask filters as lists (`source_types`, `services`, `environments`);
+- returns `null` for `GET /investigations/{id}/report` while it is 404 (report not ready yet).
 
-And two optional fields on `Investigation`: `missing_parameters` (already in the spec) and `failed_steps: string[]` (shown in the PARTIAL banner).
+Other things worth knowing:
 
-When the backend publishes OpenAPI, replace `lib/types/api.ts` with `openapi-typescript` output.
+- Optional fields arrive as `null`, so UI checks use `!= null`, not `!== undefined`.
+- The event stream sends `state_changed {from, to}`; only `tool_call_completed` carries `invocation_id`, so the timeline pairs each `tool_call_started` with the next completion of the same tool.
+- Evidence uses backend labels (`E1`, `E2`, …), which match the citations in the report markdown.
+- Investigations finish as `COMPLETED` / `PARTIAL` / `FAILED_*`; approvals can end `failed` with an `error` (shown as-is).
+- Evaluation runs are global (synthetic dataset), with `kind` = `retrieval` | `answers` and `split` = `test` | `tune` | `all`. Faithfulness isn't measured, so it isn't shown.
+
+When the backend's OpenAPI types settle, `lib/types/api.ts` can be generated with `openapi-typescript`.
+
+## CI
+
+`.github/workflows/frontend.yml` runs `npm ci`, `tsc --noEmit`, `npm run lint` and `npm run build` on pushes and pull requests that touch `frontend/`.
 
 ## Layout
 
@@ -68,6 +80,7 @@ components/*      common, layout, investigation, knowledge
 lib/api           client, contract, http + mock implementations, TanStack Query hooks
 lib/auth          AuthProvider (session, workspaces)
 lib/sse.ts        investigation event stream
+lib/evaluations.ts  strategy names and answer-metric labels shared by the evaluation pages
 ```
 
 ## Deploying to Vercel

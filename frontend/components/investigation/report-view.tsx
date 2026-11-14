@@ -70,14 +70,15 @@ export function ReportView({ report, evidenceIndex, onOpenEvidence }: { report: 
       <Section title="Unknowns & limitations">
         <div className="flex gap-2 rounded-md border border-warning/30 bg-warning/5 p-3">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
-          <Bullets items={report.unknowns} />
-          {!!report.removed_by_validation?.length && (
+          <div className="min-w-0 flex-1">
+            <Bullets items={report.unknowns} />
+            {!!report.removed_by_validation?.length && (
             <div className="mt-3">
               <p className="mb-1 text-xs font-medium text-muted-foreground">Removed during validation</p>
               <ul className="space-y-1.5">
                 {report.removed_by_validation.map((r, idx) => (
                   <li key={idx} className="rounded-md border border-dashed px-2.5 py-1.5 text-xs">
-                    <span className="text-muted-foreground line-through">{r.text}</span>
+                    <span className="break-words text-muted-foreground line-through">{r.text}</span>
                     <span className="mt-0.5 block text-[11px] text-muted-foreground">
                       {r.kind === "fact" ? "Fact" : "Hypothesis"} removed — {r.reason}
                     </span>
@@ -85,7 +86,8 @@ export function ReportView({ report, evidenceIndex, onOpenEvidence }: { report: 
                 ))}
               </ul>
             </div>
-          )}
+            )}
+          </div>
         </div>
       </Section>
 
