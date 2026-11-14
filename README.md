@@ -218,16 +218,16 @@ reproduced exactly on a brand-new database ([report](evaluation/reports/20261114
 | D: hybrid + cross-encoder rerank | **0.911** | 0.955 | **0.903** | **0.901** | 464 ms |
 
 Grounded answers over the same 70 questions with the local `opspilot-qwen3-8b` model
-([report](evaluation/reports/20261114-061903-answers-test.md)):
+([report](evaluation/reports/20261114-080026-answers-test.md); 0 model errors):
 
 | Metric | Value |
 |---|---|
 | Abstention accuracy (answers when it can, says "not enough evidence" when it can't) | 0.986 |
 | Abstains on unanswerable questions | 1.000 |
-| Citation precision (cited chunks from an expected section) | 0.726 |
+| Citation precision (cited chunks from an expected section) | 0.736 |
 | Citation coverage (answers with at least one correct citation) | 0.982 |
 | Expected-fact match (strict verbatim key phrases) | 0.800 |
-| Latency p50 / p95 | 22.7 s / 46.6 s |
+| Latency p50 / p95 | 25.0 s / 47.9 s |
 
 Faithfulness is not measured yet (no LLM judge or full human grading).
 
