@@ -10,6 +10,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.rag.generation.escaping import escape_attr, escape_body
 from app.rag.generation.llm import LLMProvider
 from app.rag.types import Candidate
 
@@ -72,7 +73,7 @@ def _strip_labels(text: str) -> str:
 
 
 def _escape(text: str) -> str:
-    return text.replace("</evidence>", "</ evidence>")
+    return escape_body(text)
 
 
 def build_user_prompt(question: str, evidence: list[Candidate]) -> str:
@@ -82,7 +83,7 @@ def build_user_prompt(question: str, evidence: list[Candidate]) -> str:
         if c.page_start:
             loc += f" (page {c.page_start})"
         blocks.append(
-            f'<evidence label="E{i}" source="{_escape(c.document_title)}" location="{_escape(loc)}">\n'
+            f'<evidence label="E{i}" source="{escape_attr(c.document_title)}" location="{escape_attr(loc)}">\n'
             f"{_escape(c.content)}\n</evidence>"
         )
     return f"Question: {question}\n\nEvidence:\n" + "\n\n".join(blocks)

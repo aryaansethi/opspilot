@@ -18,6 +18,7 @@ from app.core.logging import configure_logging, log
 from app.db.session import dispose_engine, get_sessionmaker
 from app.documents import storage
 from app.documents.ingestion import ingest_document
+from app.evaluations.extra import run_injection, run_tool_selection
 from app.evaluations.runner import (
     RETRIEVAL_CONFIGS,
     load_dataset,
@@ -74,6 +75,12 @@ async def _run_evaluation(body: dict[str, Any], run_id: uuid.UUID) -> None:
                 split=split,
                 run_id=run_id,
                 dataset=dataset,
+            )
+        elif label == "tool_selection_planner":
+            await run_tool_selection(db, llm=get_llm(), dataset=dataset, run_id=run_id)
+        elif label == "injection_resistance":
+            await run_injection(
+                db, llm=get_llm(), embedder=get_embedding_provider(), dataset=dataset, run_id=run_id
             )
         else:
             limit = body.get("limit")

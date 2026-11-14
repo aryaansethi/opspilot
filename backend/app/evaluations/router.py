@@ -18,6 +18,13 @@ from app.rag.reranking.reranker import rerank_available
 
 router = APIRouter(prefix="/evaluations", tags=["evaluations"])
 ANSWERS_LABEL = "answers_hybrid_rrf"
+TOOL_SELECTION_LABEL = "tool_selection_planner"
+INJECTION_LABEL = "injection_resistance"
+OTHER_KINDS = {
+    ANSWERS_LABEL: "answers",
+    TOOL_SELECTION_LABEL: "tool_selection",
+    INJECTION_LABEL: "injection",
+}
 
 
 class RunRequest(BaseModel):
@@ -97,9 +104,9 @@ async def start_run(body: RunRequest, db: DB, ctx: Workspace) -> RunOut:
             )
         labels = [label for label in labels if label not in rerank_labels]  # "run all" skips it
     for label in labels:
-        if label not in RETRIEVAL_CONFIGS and label != ANSWERS_LABEL:
+        if label not in RETRIEVAL_CONFIGS and label not in OTHER_KINDS:
             raise AppError(
-                f"Unknown config '{label}'. Use one of {[*RETRIEVAL_CONFIGS, ANSWERS_LABEL]}"
+                f"Unknown config '{label}'. Use one of {[*RETRIEVAL_CONFIGS, *OTHER_KINDS]}"
             )
     runs = []
     for label in labels:
@@ -107,7 +114,7 @@ async def start_run(body: RunRequest, db: DB, ctx: Workspace) -> RunOut:
             dataset_name=DATASET_NAME,
             dataset_version=ds.version,
             dataset_hash=ds.hash,
-            kind="answers" if label == ANSWERS_LABEL else "retrieval",
+            kind=OTHER_KINDS.get(label, "retrieval"),
             config_label=label,
             config={},
             split=body.split,
@@ -150,7 +157,7 @@ async def capabilities(ctx: Workspace) -> CapabilitiesOut:
         }
     )
     return CapabilitiesOut(
-        available_configs=[x for x in [*RETRIEVAL_CONFIGS, ANSWERS_LABEL] if x not in unavailable],
+        available_configs=[x for x in [*RETRIEVAL_CONFIGS, *OTHER_KINDS] if x not in unavailable],
         unavailable=unavailable,
     )
 

@@ -40,7 +40,7 @@ ANSWER_NOTES = [
     "abstention_accuracy: answers answerable questions and abstains on unanswerable ones.",
     "citation_precision / citation_coverage: cited chunks that are in an expected section / answers with at least one such citation (answered, answerable questions only).",
     "expected_fact_match: every expected key phrase appears verbatim in the answer; it under-counts correct paraphrases.",
-    "Faithfulness is not measured (no LLM judge or full human grading yet).",
+    "faithfulness: share of answer claims that an LLM judge (same local model family) finds supported by the evidence the claim cites; the judge can share the generator's blind spots, so treat it as an estimate checked against the human spot-check sheet.",
     "Latency includes retrieval and local LLM generation on one laptop.",
     "Synthetic corpus; small sample. These numbers do not predict production performance.",
 ]
@@ -133,6 +133,8 @@ async def main() -> int:
     ap.add_argument("--dataset", default=None, help="dataset version (default: settings.evaluation_default_version)")
     ap.add_argument("--configs", default="all", help="comma list of A_lexical,B_vector,C_hybrid_rrf,D_hybrid_rrf_rerank")
     ap.add_argument("--answers", action="store_true", help="run grounded-answer checks instead of retrieval")
+    ap.add_argument("--no-judge", action="store_true", help="answers: skip the LLM faithfulness judge (faster)")
+    ap.add_argument("--extra", action="store_true", help="run tool-selection and prompt-injection evaluations")
     ap.add_argument("--limit", type=int, default=None, help="answers: only the first N questions")
     ap.add_argument("--results-only", action="store_true", help="only regenerate evaluation/RESULTS.md from stored runs")
     args = ap.parse_args()
@@ -148,9 +150,16 @@ async def main() -> int:
            "embedding_model": s.embedding_model, "llm_model": s.llm_model, "generated_at": datetime.now(UTC).isoformat()}
     runs = []
     async with get_sessionmaker()() as db:
-        if args.answers:
+        if args.extra:
+            from app.evaluations.extra import run_injection, run_tool_selection
+
+            ds = load_dataset(args.dataset)
+            runs.append(await run_tool_selection(db, llm=get_llm(), dataset=ds))
+            runs.append(await run_injection(db, llm=get_llm(), embedder=get_embedding_provider(), dataset=ds))
+        elif args.answers:
             runs.append(await run_answers(db, embedder=get_embedding_provider(), llm=get_llm(), split=args.split,
-                                          limit=args.limit, dataset=load_dataset(args.dataset)))
+                                          limit=args.limit, dataset=load_dataset(args.dataset),
+                                          judge=not args.no_judge))
         else:
             labels = list(RETRIEVAL_CONFIGS) if args.configs == "all" else args.configs.split(",")
             for label in labels:
@@ -166,13 +175,17 @@ async def main() -> int:
         if r.status != "completed":
             print(f"{r.config_label}: {r.status} {r.error}")
     first = runs[0]
-    kind = "answers" if args.answers else "retrieval"
+    kind = "extra" if args.extra else ("answers" if args.answers else "retrieval")
     lines = [f"# OpsPilot {kind} evaluation — {first.dataset_name} {first.dataset_version} ({args.split} split)", "",
              f"- Generated: {env['generated_at']}", f"- Dataset hash: `{first.dataset_hash[:16]}`",
              f"- Environment: {env['system']} {env['machine']}, Python {env['python']}",
              f"- Embedding model: `{env['embedding_model']}`" + (f", LLM: `{env['llm_model']}`" if args.answers else ""),
              f"- Questions: {first.metrics.get('questions') if first.metrics else '?'}", ""]
-    if args.answers:
+    if args.extra:
+        for r in runs:
+            lines += [f"## {r.config_label}", "", f"Method: {r.config.get('method', '')}", "", "| Metric | Value |", "|---|---|"]
+            lines += [f"| {k} | {fmt(v)} |" for k, v in (r.metrics or {}).items()] + [""]
+    elif args.answers:
         m = first.metrics or {}
         lines += ["| Metric | Value |", "|---|---|"] + [f"| {k} | {fmt(v)} |" for k, v in m.items()]
     else:
@@ -191,7 +204,9 @@ async def main() -> int:
                 lines.append(f"| {r.config_label} | " + " | ".join(
                     f"{fmt(bk[k]['recall_at_5'])} / {fmt(bk[k]['mrr'])} (n={bk[k]['n']})" if k in bk else "—"
                     for k in keys) + " |")
-    if args.answers:
+    if args.extra:
+        pass
+    elif args.answers:
         lines += ["", "Notes:", *[f"- {n}" for n in ANSWER_NOTES]]
     else:
         lines += ["", "Notes:", *[f"- {n}" for n in RETRIEVAL_NOTES]]

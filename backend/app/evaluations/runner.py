@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import get_settings
 from app.core.logging import log
 from app.core.security import hash_password
+from app.evaluations.judge import judge_claims
 from app.evaluations.metrics import Expected, Retrieved, match, mean, percentile, score
 from app.models import (
     Document,
@@ -94,15 +95,17 @@ def load_dataset(version: str | None = None, path: str | None = None) -> Dataset
         else Path(s.evaluation_datasets_root) / (version or s.evaluation_default_version)
     )
     corpus = {p.stem: p.read_bytes() for p in sorted((root / "corpus").glob("*.md"))}
-    questions = [
-        json.loads(line)
-        for line in (root / "questions.jsonl").read_text().splitlines()
-        if line.strip()
-    ]
+    qfile = root / "questions.jsonl"  # optional: e.g. the injection corpus has none
+    questions = (
+        [json.loads(line) for line in qfile.read_text().splitlines() if line.strip()]
+        if qfile.exists()
+        else []
+    )
     h = hashlib.sha256()
     for name, data in corpus.items():
         h.update(name.encode() + b"\0" + data)
-    h.update((root / "questions.jsonl").read_bytes())
+    if qfile.exists():
+        h.update(qfile.read_bytes())
     return Dataset(version=root.name, hash=h.hexdigest(), corpus=corpus, questions=questions)
 
 
@@ -424,8 +427,10 @@ async def run_answers(
     limit: int | None = None,
     dataset: Dataset | None = None,
     run_id: uuid.UUID | None = None,
+    judge: bool = True,
 ) -> EvaluationRun:
-    """Grounded-answer checks: abstention, citation precision/coverage, expected-fact match."""
+    """Grounded-answer checks: abstention, citation precision/coverage, expected-fact match, and
+    (judge=True) claim-level faithfulness judged by the LLM against each claim's cited evidence."""
     ds = dataset or load_dataset()
     s = get_settings()
     ws_id = await ensure_eval_workspace(db, ds, embedder)
@@ -438,7 +443,7 @@ async def run_answers(
         "embedding_model": embedder.model,
         "context_chunks": s.answer_context_chunks,
         "limit": limit,
-        "faithfulness": "not measured (no LLM judge yet); see expected_fact_match",
+        "faithfulness_judge": llm.model if judge else None,
     }
     run = await _start_run(
         db, ds, "answers", "answers_hybrid_rrf", config, split, requested_by, run_id
@@ -452,6 +457,8 @@ async def run_answers(
     try:
         abstain_ok, cite_prec, cite_cov, fact_match, latencies, errors = [], [], [], [], [], 0
         unans: list[float] = []
+        judged = supported = judge_errors = 0
+        judge_ms: list[float] = []
         for q in qs:
             t = time.perf_counter()
             out = await hybrid_search(
@@ -489,6 +496,19 @@ async def run_answers(
                 "removed_labels": g.removed_labels,
                 "correct_abstention": correct_abstention,
             }
+            if judge and not g.insufficient_evidence and g.claims:
+                tj = time.perf_counter()
+                try:
+                    verdicts = await judge_claims(llm, [(c.text, c.evidence) for c in g.claims[:6]])
+                except Exception:  # noqa: BLE001 - a judge failure is counted, not fatal
+                    verdicts = None
+                judge_ms.append((time.perf_counter() - tj) * 1000)
+                if verdicts is None:
+                    judge_errors += 1
+                else:
+                    judged += len(verdicts)
+                    supported += sum(verdicts)
+                    detail["claim_supported"] = verdicts
             rr = 0.0
             if q["answerable"] and not g.insufficient_evidence:
                 expected = [Expected(r["document"], r["section"]) for r in q["relevant"]]
@@ -531,6 +551,10 @@ async def run_answers(
             "citation_precision": round(mean(cite_prec), 4),
             "citation_coverage": round(mean(cite_cov), 4),
             "expected_fact_match": round(mean(fact_match), 4),
+            "faithfulness": round(supported / judged, 4) if judged else None,
+            "claims_judged": judged,
+            "judge_errors": judge_errors,
+            "judge_latency_p50_ms": round(percentile(judge_ms, 50), 1) if judge_ms else None,
             "latency_p50_ms": round(percentile(latencies, 50), 1),
             "latency_p95_ms": round(percentile(latencies, 95), 1),
             "questions": len(qs),

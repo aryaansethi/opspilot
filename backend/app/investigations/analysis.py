@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.investigations.params import INCIDENT_TYPES
+from app.rag.generation.escaping import escape_attr, escape_body
 from app.rag.generation.llm import LLMProvider
 
 TASKS = (
@@ -219,9 +220,9 @@ def analysis_prompt(
 ) -> str:
     blocks, used = [], 0
     for e in evidence:
-        body = e.excerpt[:per_item_chars].replace("</evidence>", "</ evidence>")
+        body = escape_body(e.excerpt[:per_item_chars])
         kind = "live" if e.source_system in LIVE_SOURCES else "documentation"
-        block = f'<evidence label="{e.label}" source="{e.source_system}" kind="{kind}" title="{e.title[:120]}">\n{body}\n</evidence>'
+        block = f'<evidence label="{e.label}" source="{e.source_system}" kind="{kind}" title="{escape_attr(e.title, 120)}">\n{body}\n</evidence>'
         if used + len(block) > total_chars:
             break
         blocks.append(block)
