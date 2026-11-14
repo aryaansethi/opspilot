@@ -21,13 +21,17 @@ COPY backend/ ./
 RUN uv sync --frozen --no-dev $( [ "$INSTALL_RERANK" = "true" ] && echo --group rerank )
 
 FROM python:3.12-slim-bookworm
-RUN useradd --create-home --uid 10001 opspilot
+RUN useradd --create-home --uid 10001 opspilot \
+    # Model cache for the optional reranker. Created here with the right owner so a named volume
+    # mounted at this path (to avoid re-downloading the model) is writable by the non-root user.
+    && mkdir -p /home/opspilot/.cache/huggingface && chown -R opspilot:opspilot /home/opspilot/.cache
 WORKDIR /app
 COPY --from=build --chown=opspilot:opspilot /app /app
 COPY --chown=opspilot:opspilot evaluation/datasets /evaluation/datasets
 # Seed/smoke scripts, e.g.: docker compose run --rm api python /app/scripts/seed_cloudwatch.py
 COPY --chown=opspilot:opspilot scripts /app/scripts
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONPATH=/app ENVIRONMENT=production \
+    HF_HOME=/home/opspilot/.cache/huggingface \
     MCP_HOST=0.0.0.0 EVALUATION_DATASETS_ROOT=/evaluation/datasets
 USER opspilot
 EXPOSE 8000
