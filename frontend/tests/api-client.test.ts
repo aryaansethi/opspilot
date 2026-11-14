@@ -66,7 +66,7 @@ describe("request()", () => {
 
   it("turns the backend error envelope into an ApiError", async () => {
     fetchMock.mockResolvedValueOnce(json(422, { error: { code: "validation_error", message: "Bad input", details: { field: "email" } } }))
-    const err = await request("/x", { noRetry: true }).catch((e) => e)
+    const err = (await request("/x", { noRetry: true }).catch((e: unknown) => e)) as ApiError
     expect(err).toBeInstanceOf(ApiError)
     expect(err.status).toBe(422)
     expect(err.code).toBe("validation_error")
@@ -75,7 +75,7 @@ describe("request()", () => {
 
   it("reports a network failure as a readable error", async () => {
     fetchMock.mockRejectedValueOnce(new TypeError("fetch failed"))
-    const err = await request("/x").catch((e) => e)
+    const err = (await request("/x").catch((e: unknown) => e)) as ApiError
     expect(err).toBeInstanceOf(ApiError)
     expect(err.code).toBe("network_error")
   })

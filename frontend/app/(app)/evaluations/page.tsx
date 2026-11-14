@@ -23,7 +23,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { errorMessage } from "@/lib/api/client"
 import { useEvaluationCapabilities, useEvaluationRuns, useRunEvaluation } from "@/lib/api/endpoints/evaluations"
 import { absoluteTime, formatMetric } from "@/lib/format"
-import { ANSWER_METRICS, configName, RETRIEVAL_LABELS, shortName } from "@/lib/evaluations"
+import { ANSWER_METRICS, configName, INJECTION_METRICS, isRetrievalLabel, RETRIEVAL_LABELS, runKind, shortName, TOOL_SELECTION_METRICS, type MetricDef } from "@/lib/evaluations"
 import type { EvaluationMetrics, EvaluationRun, EvaluationSplit } from "@/lib/types/api"
 
 const QUALITY: { key: keyof EvaluationMetrics; label: string }[] = [
@@ -33,15 +33,15 @@ const QUALITY: { key: keyof EvaluationMetrics; label: string }[] = [
   { key: "ndcg_at_10", label: "nDCG@10" },
 ]
 
-const kindOf = (r: EvaluationRun) => r.kind ?? (r.config_label.startsWith("answers") ? "answers" : "retrieval")
+const kindOf = runKind
 const splitOf = (r: EvaluationRun) => r.split ?? "test"
 const finishedAt = (r: EvaluationRun) => r.finished_at ?? r.started_at
 
-/** Latest completed retrieval run per strategy for a split, within the newest dataset version. */
-function comparisonSet(runs: EvaluationRun[], split: EvaluationSplit) {
+/** Latest completed retrieval run per strategy for a split, within one dataset version (default: the newest). */
+function comparisonSet(runs: EvaluationRun[], split: EvaluationSplit, wanted?: string) {
   const done = runs.filter((r) => r.status === "completed" && r.metrics && kindOf(r) === "retrieval" && splitOf(r) === split)
   if (!done.length) return { version: null as string | null, runs: [] as EvaluationRun[], latest: null as string | null }
-  const version = [...done].sort((a, b) => finishedAt(b).localeCompare(finishedAt(a)))[0].dataset_version
+  const version = wanted && done.some((r) => r.dataset_version === wanted) ? wanted : [...done].sort((a, b) => finishedAt(b).localeCompare(finishedAt(a)))[0].dataset_version
   const byConfig = new Map<string, EvaluationRun>()
   for (const r of done.filter((r) => r.dataset_version === version).sort((a, b) => a.started_at.localeCompare(b.started_at))) byConfig.set(r.config_label, r)
   const set = [...byConfig.values()].sort((a, b) => a.config_label.localeCompare(b.config_label))
@@ -62,21 +62,35 @@ function Caption({ run, at, split }: { run: EvaluationRun; at: string | null; sp
 function headline(r: EvaluationRun): string {
   const m = r.metrics
   if (!m) return "—"
-  if (kindOf(r) === "answers")
-    return `abstention ${formatMetric(m.abstention_accuracy)} · citation precision ${formatMetric(m.citation_precision)}`
+  const kind = kindOf(r)
+  if (kind === "answers")
+    return `${m.faithfulness != null ? `faithfulness ${formatMetric(m.faithfulness)} · ` : ""}abstention ${formatMetric(m.abstention_accuracy)} · citation precision ${formatMetric(m.citation_precision)}`
+  if (kind === "tool_selection")
+    return `exact ${formatMetric(m.tool_selection_accuracy)} · P ${formatMetric(m.tool_selection_precision)} · R ${formatMetric(m.tool_selection_recall)}`
+  if (kind === "injection") return `resistance ${formatMetric(m.injection_resistance)} over ${m.cases ?? "?"} cases`
   return `R@5 ${formatMetric(m.recall_at_5)} · MRR ${formatMetric(m.mrr)} · nDCG@10 ${formatMetric(m.ndcg_at_10)}`
 }
 
-type RunChoice = "all_retrieval" | "answers_hybrid_rrf" | keyof typeof RETRIEVAL_LABELS
+type RunChoice = "all_retrieval" | keyof typeof RETRIEVAL_LABELS
 
-function RunDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+const OTHER_RUNS: { label: string; text: string }[] = [
+  { label: "answers_hybrid_rrf", text: "Answer quality (~1 min per question)" },
+  { label: "tool_selection_planner", text: "Tool selection by the investigation planner" },
+  { label: "injection_resistance", text: "Prompt-injection resistance" },
+]
+
+function RunDialog({ open, onOpenChange, versions }: { open: boolean; onOpenChange: (v: boolean) => void; versions: string[] }) {
   const runEval = useRunEvaluation()
   const caps = useEvaluationCapabilities()
   const unavailable = caps.data?.unavailable ?? {}
-  const retrievalLabels = Object.keys(RETRIEVAL_LABELS).filter((k) => k !== "answers_hybrid_rrf")
+  // Offer what this backend knows: its capabilities list when available, else the original A–D + answers.
+  const known = new Set(caps.data ? [...caps.data.available_configs, ...Object.keys(unavailable)] : ["A_lexical", "B_vector", "C_hybrid_rrf", "D_hybrid_rrf_rerank", "answers_hybrid_rrf"])
+  const retrievalLabels = Object.keys(RETRIEVAL_LABELS).filter((k) => isRetrievalLabel(k) && known.has(k))
+  const others = OTHER_RUNS.filter((o) => known.has(o.label))
   const runnable = retrievalLabels.filter((k) => !(k in unavailable))
   const [what, setWhat] = useState<RunChoice>("all_retrieval")
   const [split, setSplit] = useState<EvaluationSplit>("test")
+  const [dataset, setDataset] = useState<string>("__default__")
   const [limit, setLimit] = useState("")
   const answers = what === "answers_hybrid_rrf"
 
@@ -87,6 +101,7 @@ function RunDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: bo
       {
         config_label: what === "all_retrieval" ? undefined : what,
         split,
+        ...(dataset !== "__default__" ? { dataset_version: dataset } : {}),
         ...(answers && limit && n > 0 ? { limit: Math.floor(n) } : {}),
       },
       {
@@ -122,9 +137,12 @@ function RunDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: bo
                     {configName(k)} only{k in unavailable ? ` — ${unavailable[k]}` : ""}
                   </SelectItem>
                 ))}
-                <SelectItem value="answers_hybrid_rrf" disabled={"answers_hybrid_rrf" in unavailable}>
-                  Answer quality (~1 min per question)
-                </SelectItem>
+                {others.map((o) => (
+                  <SelectItem key={o.label} value={o.label} disabled={o.label in unavailable}>
+                    {o.text}
+                    {o.label in unavailable ? ` — ${unavailable[o.label]}` : ""}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -141,6 +159,24 @@ function RunDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: bo
               </SelectContent>
             </Select>
           </div>
+          {versions.length > 0 && (
+            <div className="grid gap-1.5">
+              <Label htmlFor="ev-dataset">Dataset version</Label>
+              <Select value={dataset} onValueChange={setDataset}>
+                <SelectTrigger id="ev-dataset" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__default__">Server default (latest)</SelectItem>
+                  {versions.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      {v}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           {Object.keys(unavailable).length > 0 && (
             <p className="text-xs text-muted-foreground">
               {Object.keys(unavailable).map(configName).join(", ")} can&apos;t run here: {[...new Set(Object.values(unavailable))].join("; ")}. Rebuild the backend
@@ -165,27 +201,70 @@ function RunDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: bo
   )
 }
 
+function MetricCard({ title, description, run, defs }: { title: string; description: string; run: EvaluationRun; defs: MetricDef[] }) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {run.status === "running" ? (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" /> Running
+          </p>
+        ) : (
+          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {defs.map((m) => (
+              <div key={m.key} className="rounded-md border p-3" title={m.hint}>
+                <dt className="text-xs text-muted-foreground">{m.label}</dt>
+                <dd className="mt-0.5 font-mono text-lg tabular-nums">{formatMetric(run.metrics?.[m.key] as number | undefined)}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        <p className="font-mono text-[11px] text-muted-foreground">
+          {run.metrics?.cases ?? "?"} cases · dataset {run.dataset_version} ·{" "}
+          <Link href={`/evaluations/${run.id}`} className="text-primary hover:underline">
+            details
+          </Link>
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function EvaluationsPage() {
   const runs = useEvaluationRuns()
   const [dialog, setDialog] = useState(false)
   const [split, setSplit] = useState<EvaluationSplit>("test")
+  const [pickedVersion, setPickedVersion] = useState<string>()
   const all = useMemo(() => runs.data ?? [], [runs.data])
-  const cmp = useMemo(() => comparisonSet(all, split), [all, split])
-  const answersRun = useMemo(
-    () =>
-      all
-        .filter((r) => kindOf(r) === "answers" && splitOf(r) === split && (r.status === "completed" || r.status === "running"))
+  const versions = useMemo(() => [...new Set(all.map((r) => r.dataset_version))].sort().reverse(), [all])
+  const cmp = useMemo(() => comparisonSet(all, split, pickedVersion), [all, split, pickedVersion])
+  const version = cmp.version ?? pickedVersion ?? versions[0]
+  /** Latest completed run of a kind for this split and dataset version, else one still running. */
+  const latestOf = useMemo(
+    () => (kind: string, matchSplit = true) => {
+      const pool = all
+        .filter((r) => kindOf(r) === kind && (!matchSplit || splitOf(r) === split) && (!version || r.dataset_version === version))
         .sort((a, b) => b.started_at.localeCompare(a.started_at))
-        .find((r) => r.status === "completed") ??
-      all.find((r) => kindOf(r) === "answers" && splitOf(r) === split && r.status === "running"),
-    [all, split],
+      return pool.find((r) => r.status === "completed") ?? pool.find((r) => r.status === "running")
+    },
+    [all, split, version],
   )
+  const answersRun = latestOf("answers")
+  const toolRun = latestOf("tool_selection", false)
+  const injectionRun = latestOf("injection", false)
 
   const config: ChartConfig = Object.fromEntries(cmp.runs.map((r, i) => [`c${i}`, { label: shortName(r.config_label), color: `var(--chart-${(i % 5) + 1})` }]))
   const qualityData = QUALITY.map((m) => ({ metric: m.label, ...Object.fromEntries(cmp.runs.map((r, i) => [`c${i}`, (r.metrics?.[m.key] as number | undefined) ?? null])) }))
   const latencyConfig: ChartConfig = { p50: { label: "p50", color: "var(--chart-1)" }, p95: { label: "p95", color: "var(--chart-3)" } }
   const latencyData = cmp.runs.map((r) => ({ config: shortName(r.config_label), p50: r.metrics?.latency_p50_ms ?? null, p95: r.metrics?.latency_p95_ms ?? null }))
-  const kinds = (["lexical", "semantic", "multi"] as const).filter((k) => cmp.runs.some((r) => r.metrics?.by_kind?.[k]))
+  const KIND_ORDER = ["lexical", "semantic", "multi", "error", "latency", "database", "deployment", "ambiguous"]
+  const kinds = [...new Set(cmp.runs.flatMap((r) => Object.keys(r.metrics?.by_kind ?? {})))].sort(
+    (a, b) => (KIND_ORDER.indexOf(a) + 1 || 99) - (KIND_ORDER.indexOf(b) + 1 || 99) || a.localeCompare(b),
+  )
 
   const runButton = (
     <Button onClick={() => setDialog(true)}>
@@ -196,7 +275,7 @@ export default function EvaluationsPage() {
   return (
     <>
       <PageHeader title="Evaluations" description="Measured retrieval and answer quality on a versioned dataset. Only real, completed runs are charted." actions={all.length > 0 && runButton} />
-      <RunDialog open={dialog} onOpenChange={setDialog} />
+      <RunDialog open={dialog} onOpenChange={setDialog} versions={versions} />
       {runs.isLoading ? (
         <ListSkeleton rows={6} />
       ) : runs.isError ? (
@@ -210,13 +289,29 @@ export default function EvaluationsPage() {
         />
       ) : (
         <div className="space-y-4">
-          <Tabs value={split} onValueChange={(v) => setSplit(v as EvaluationSplit)}>
-            <TabsList>
-              <TabsTrigger value="test">Test set</TabsTrigger>
-              <TabsTrigger value="tune">Tune set</TabsTrigger>
-              <TabsTrigger value="all">All questions</TabsTrigger>
-            </TabsList>
-          </Tabs>
+          <div className="flex flex-wrap items-center gap-3">
+            <Tabs value={split} onValueChange={(v) => setSplit(v as EvaluationSplit)}>
+              <TabsList>
+                <TabsTrigger value="test">Test set</TabsTrigger>
+                <TabsTrigger value="tune">Tune set</TabsTrigger>
+                <TabsTrigger value="all">All questions</TabsTrigger>
+              </TabsList>
+            </Tabs>
+            {versions.length > 1 && (
+              <Select value={version} onValueChange={setPickedVersion}>
+                <SelectTrigger className="h-8 w-40" aria-label="Dataset version">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {versions.map((v) => (
+                    <SelectItem key={v} value={v}>
+                      Dataset {v}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          </div>
 
           {cmp.version && cmp.runs.length > 0 ? (
             <>
@@ -334,7 +429,7 @@ export default function EvaluationsPage() {
               ) : (
                 <div className="space-y-3">
                   <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-                    {ANSWER_METRICS.map((m) => (
+                    {ANSWER_METRICS.filter((m) => m.key !== "faithfulness" || answersRun.metrics?.faithfulness != null).map((m) => (
                       <div key={m.key} className="rounded-md border p-3" title={m.hint}>
                         <dt className="text-xs text-muted-foreground">{m.label}</dt>
                         <dd className="mt-0.5 font-mono text-lg tabular-nums">{formatMetric(answersRun.metrics?.[m.key] as number | undefined)}</dd>
@@ -350,12 +445,24 @@ export default function EvaluationsPage() {
                   </p>
                   <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
                     <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-                    Faithfulness isn&apos;t measured yet (no LLM judge). “Expected facts present” is a plain string check, not a judgement of correctness.
+                    {answersRun.metrics?.faithfulness != null
+                      ? `Faithfulness is judged per claim by ${answersRun.metrics.faithfulness_judge ?? "an LLM judge"} over ${answersRun.metrics.claims_judged ?? "?"} claims; a judge can be wrong, so treat it as an estimate.`
+                      : "Faithfulness isn't measured for this run."}{" "}
+                    “Expected facts present” is a plain string check, not a judgement of correctness.
                   </p>
                 </div>
               )}
             </CardContent>
           </Card>
+
+          {(toolRun || injectionRun) && (
+            <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2">
+              {toolRun && <MetricCard title="Tool selection" description="Does the investigation planner pick the expected read-only tasks for each case?" run={toolRun} defs={TOOL_SELECTION_METRICS} />}
+              {injectionRun && (
+                <MetricCard title="Prompt-injection resistance" description="Instructions planted in documents, logs or tool output must not change the system's behaviour." run={injectionRun} defs={INJECTION_METRICS} />
+              )}
+            </div>
+          )}
 
           <Card>
             <CardHeader>

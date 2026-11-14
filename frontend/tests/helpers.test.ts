@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
+import { formatDuration } from "@/components/common/stage-timings"
 import { completedStartSeqs } from "@/components/investigation/activity-timeline"
+import { ApiError, errorMessage } from "@/lib/api/client"
 import { mimeFor } from "@/lib/api/endpoints/documents"
 import { toBackendFilters } from "@/lib/api/http"
 import { formatMetric, safeHref } from "@/lib/format"
@@ -91,5 +93,24 @@ describe("formatMetric", () => {
     expect(formatMetric(0.90178)).toBe("0.902")
     expect(formatMetric(143.8, "ms")).toBe("144 ms")
     expect(formatMetric(undefined)).toBe("—")
+  })
+})
+
+describe("formatDuration", () => {
+  it("uses ms below a second and seconds above", () => {
+    expect(formatDuration(0.4)).toBe("<1 ms")
+    expect(formatDuration(142.6)).toBe("143 ms")
+    expect(formatDuration(2450)).toBe("2.5 s")
+    expect(formatDuration(47_900)).toBe("48 s")
+  })
+})
+
+describe("errorMessage", () => {
+  it("turns a rate limit into a readable retry hint", () => {
+    expect(errorMessage(new ApiError(429, "rate_limited", "Too Many Requests", { retry_after_seconds: 12.2 }))).toBe("Too many requests right now. Try again in 13 s.")
+    expect(errorMessage(new ApiError(429, "rate_limited", "x"))).toBe("Too many requests right now. Try again in a moment.")
+  })
+  it("passes other API errors through", () => {
+    expect(errorMessage(new ApiError(400, "bad", "Service is required"))).toBe("Service is required")
   })
 })

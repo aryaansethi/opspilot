@@ -12,8 +12,8 @@ import { ListSkeleton } from "@/components/common/skeletons"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useEvaluationRun } from "@/lib/api/endpoints/evaluations"
-import { ANSWER_METRICS, configName } from "@/lib/evaluations"
-import { absoluteTime, formatMetric } from "@/lib/format"
+import { configName, metricsFor, runKind } from "@/lib/evaluations"
+import { absoluteTime, formatMetric, humanize } from "@/lib/format"
 import type { EvaluationMetrics, EvaluationQuestionResult } from "@/lib/types/api"
 
 const RETRIEVAL_METRICS: { key: keyof EvaluationMetrics; label: string }[] = [
@@ -46,9 +46,11 @@ function RefList({ items, hits }: { items: Ref[]; hits?: boolean[] }) {
   )
 }
 
-function Detail({ q, answers }: { q: EvaluationQuestionResult; answers: boolean }) {
+function Detail({ q, answers, kind }: { q: EvaluationQuestionResult; answers: boolean; kind: string }) {
   const d = q.detail ?? {}
   if (typeof d.error === "string") return <p className="font-mono text-xs text-destructive">{d.error}</p>
+  // Planner and safety cases have their own detail shapes; show them as-is.
+  if (kind !== "answers" && kind !== "retrieval") return <JsonViewer value={d} />
   if (answers)
     return (
       <div className="grid gap-3 md:grid-cols-2">
@@ -87,7 +89,7 @@ export default function EvaluationRunPage({ params }: { params: Promise<{ runId:
   const [outcome, setOutcome] = useState<string>()
 
   const results = useMemo(() => run.data?.results ?? [], [run.data])
-  const isAnswers = (run.data?.kind ?? (run.data?.config_label.startsWith("answers") ? "answers" : "retrieval")) === "answers"
+  const isAnswers = run.data ? runKind(run.data) !== "retrieval" : false
   // Retrieval can't "hit" an unanswerable question, so a retrieval miss only counts on answerable ones.
   const shown = useMemo(
     () =>
@@ -102,9 +104,11 @@ export default function EvaluationRunPage({ params }: { params: Promise<{ runId:
   if (run.isLoading) return <ListSkeleton rows={6} />
   if (run.isError) return <ErrorState error={run.error} onRetry={() => run.refetch()} />
   const r = run.data!
-  const answers = (r.kind ?? (r.config_label.startsWith("answers") ? "answers" : "retrieval")) === "answers"
+  const kind = runKind(r)
+  const answers = kind === "answers"
+  const scored = kind !== "retrieval" // per-case pass/fail rather than ranking
   const m = r.metrics ?? {}
-  const tiles = answers ? ANSWER_METRICS : RETRIEVAL_METRICS
+  const tiles = kind === "retrieval" ? RETRIEVAL_METRICS : metricsFor(kind).filter((t) => t.key !== "faithfulness" || m.faithfulness != null)
   const byKind = Object.entries(m.by_kind ?? {})
   const toggle = (id: string) =>
     setOpen((prev) => {
@@ -166,7 +170,8 @@ export default function EvaluationRunPage({ params }: { params: Promise<{ runId:
                   {m.questions ?? "?"} questions
                   {m.answerable_questions !== undefined && ` · ${m.answerable_questions} answerable`}
                   {m.model_errors !== undefined && ` · ${m.model_errors} model errors`}
-                  {answers && " · faithfulness not measured (no LLM judge)"}
+                  {m.cases !== undefined && ` · ${m.cases} cases`}
+                  {answers && (m.faithfulness != null ? ` · faithfulness judged by ${m.faithfulness_judge ?? "an LLM"} over ${m.claims_judged ?? "?"} claims` : " · faithfulness not measured")}
                 </p>
                 {byKind.length > 0 && (
                   <Table>
@@ -214,12 +219,7 @@ export default function EvaluationRunPage({ params }: { params: Promise<{ runId:
               onChange={setKindFilter}
               label="Question type"
               allLabel="All types"
-              options={[
-                { value: "lexical", label: "Lexical" },
-                { value: "semantic", label: "Semantic" },
-                { value: "multi", label: "Multi-section" },
-                { value: "unanswerable", label: "Unanswerable" },
-              ]}
+              options={[...new Set(results.map((q) => q.kind).filter((k): k is string => !!k))].sort().map((k) => ({ value: k, label: humanize(k) }))}
             />
             <FilterSelect
               value={outcome}
@@ -227,8 +227,8 @@ export default function EvaluationRunPage({ params }: { params: Promise<{ runId:
               label="Outcome"
               allLabel="Hits and misses"
               options={[
-                { value: "miss", label: answers ? "Wrong only" : "Misses only" },
-                { value: "hit", label: answers ? "Correct only" : "Hits only" },
+                { value: "miss", label: scored ? "Wrong only" : "Misses only" },
+                { value: "hit", label: scored ? "Correct only" : "Hits only" },
               ]}
             />
           </div>
@@ -244,8 +244,8 @@ export default function EvaluationRunPage({ params }: { params: Promise<{ runId:
                   <TableHead>ID</TableHead>
                   <TableHead>Question</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead className="text-center">{answers ? "Correct" : "Hit@5"}</TableHead>
-                  {!answers && <TableHead className="text-right">RR</TableHead>}
+                  <TableHead className="text-center">{scored ? "Correct" : "Hit@5"}</TableHead>
+                  {!scored && <TableHead className="text-right">RR</TableHead>}
                   <TableHead className="text-right">Latency</TableHead>
                 </TableRow>
               </TableHeader>
@@ -264,14 +264,14 @@ export default function EvaluationRunPage({ params }: { params: Promise<{ runId:
                         <TableCell className="text-center">
                           {q.hit_at_5 ? <Check className="mx-auto size-4 text-success" aria-label="yes" /> : <X className="mx-auto size-4 text-muted-foreground" aria-label="no" />}
                         </TableCell>
-                        {!answers && <TableCell className="text-right font-mono text-xs">{q.reciprocal_rank.toFixed(3)}</TableCell>}
+                        {!scored && <TableCell className="text-right font-mono text-xs">{q.reciprocal_rank.toFixed(3)}</TableCell>}
                         <TableCell className="text-right font-mono text-xs whitespace-nowrap">{formatMetric(q.latency_ms, "ms")}</TableCell>
                       </TableRow>
                       {isOpen && (
                         <TableRow className="hover:bg-transparent">
                           <TableCell />
-                          <TableCell colSpan={answers ? 5 : 6} className="bg-muted/30 whitespace-normal">
-                            <Detail q={q} answers={answers} />
+                          <TableCell colSpan={scored ? 5 : 6} className="bg-muted/30 whitespace-normal">
+                            <Detail q={q} answers={answers} kind={kind} />
                           </TableCell>
                         </TableRow>
                       )}

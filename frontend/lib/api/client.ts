@@ -17,6 +17,10 @@ export class ApiError extends Error {
 }
 
 export function errorMessage(err: unknown): string {
+  if (err instanceof ApiError && (err.status === 429 || err.code === "rate_limited")) {
+    const wait = Number(err.details?.retry_after_seconds)
+    return `Too many requests right now. Try again ${wait > 0 ? `in ${Math.ceil(wait)} s` : "in a moment"}.`
+  }
   if (err instanceof ApiError) return err.message
   if (err instanceof Error) return err.message
   return "Something went wrong"

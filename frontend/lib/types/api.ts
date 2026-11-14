@@ -113,9 +113,13 @@ export interface SearchRequest {
   rerank: boolean
 }
 
+/** Per-stage timings in ms; stages that didn't run are absent. */
+export type StageTimings = Partial<Record<string, number>>
+
 export interface SearchResponse {
   results: SearchResult[]
   latency_ms: number
+  timings_ms?: StageTimings | null
 }
 
 export type SourceSystem = "knowledge_base" | "github" | "cloudwatch" | "jira"
@@ -142,6 +146,9 @@ export interface AskResponse {
   claims: { text: string; evidence_ids: UUID[] }[]
   citations: Evidence[]
   insufficient_evidence: boolean
+  latency_ms?: number
+  retrieval_ms?: number
+  generation_ms?: number
 }
 
 export type InvestigationState =
@@ -177,6 +184,8 @@ export interface Investigation {
   missing_parameters?: MissingParameter[]
   failed_steps?: string[]
   error?: string | null
+  /** plan_llm, knowledge_retrieval, read_tools, analysis_llm, report, total — null until finished. */
+  timings_ms?: StageTimings | null
   plan?: { tasks?: string[]; log_search_terms?: string[]; rationale?: string; source?: "llm" | "default"; allowed_tasks?: string[] } | null
   created_by: User | null
   created_at: ISODate
@@ -326,9 +335,10 @@ export interface AuditFilters {
   cursor?: string
 }
 
-export type EvaluationKind = "retrieval" | "answers"
+export type EvaluationKind = "retrieval" | "answers" | "tool_selection" | "injection"
 export type EvaluationSplit = "test" | "tune" | "all"
-export type QuestionKind = "lexical" | "semantic" | "multi" | "unanswerable"
+/** v1 kinds plus v2 topic kinds (error, latency, database, deployment, ambiguous, …); kept open. */
+export type QuestionKind = "lexical" | "semantic" | "multi" | "unanswerable" | (string & {})
 
 export interface KindBreakdown {
   n: number
@@ -346,7 +356,7 @@ export interface EvaluationMetrics {
   ndcg_at_5?: number
   ndcg_at_10?: number
   answerable_questions?: number
-  by_kind?: Partial<Record<"lexical" | "semantic" | "multi", KindBreakdown>>
+  by_kind?: Record<string, KindBreakdown | undefined>
   // answers
   abstention_accuracy?: number
   unanswerable_abstention_rate?: number
@@ -354,6 +364,17 @@ export interface EvaluationMetrics {
   citation_coverage?: number
   expected_fact_match?: number
   model_errors?: number
+  /** Share of answer claims an LLM judge found supported by the cited context. */
+  faithfulness?: number
+  claims_judged?: number
+  faithfulness_judge?: string
+  // tool selection (investigation planner)
+  tool_selection_accuracy?: number
+  tool_selection_precision?: number
+  tool_selection_recall?: number
+  // prompt-injection resistance
+  injection_resistance?: number
+  cases?: number
   // both
   questions?: number
   latency_p50_ms?: number

@@ -4,6 +4,7 @@ import { AlertTriangle, Loader2, MessageSquareText, Search as SearchIcon, Search
 import { useState, type FormEvent } from "react"
 import { SourceTypeBadge } from "@/components/common/badges"
 import { CitationChip } from "@/components/common/citation-chip"
+import { StageTimings } from "@/components/common/stage-timings"
 import { EmptyState } from "@/components/common/empty-state"
 import { ErrorState } from "@/components/common/error-state"
 import { FilterSelect } from "@/components/common/filter-select"
@@ -19,7 +20,7 @@ import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAsk, useSearch } from "@/lib/api/endpoints/search"
-import type { Evidence, SearchFilters, SearchMode, SourceType } from "@/lib/types/api"
+import type { AskResponse, Evidence, SearchFilters, SearchMode, SourceType } from "@/lib/types/api"
 import { cn } from "@/lib/utils"
 
 const MODES: { value: SearchMode; label: string }[] = [
@@ -27,6 +28,12 @@ const MODES: { value: SearchMode; label: string }[] = [
   { value: "lexical", label: "Lexical" },
   { value: "vector", label: "Vector" },
 ]
+
+/** Ask reports total plus retrieval/generation split; older backends only send the total. */
+function askTimings(a: AskResponse) {
+  if (a.latency_ms == null) return null
+  return { retrieval: a.retrieval_ms, generation: a.generation_ms, total: a.latency_ms }
+}
 
 export default function SearchPage() {
   const [tab, setTab] = useState<"search" | "ask">("search")
@@ -153,10 +160,12 @@ export default function SearchPage() {
             <EmptyState icon={SearchX} title="No results" description="Try different wording, another mode, or fewer filters." />
           ) : (
             <>
-              <p className="mb-3 text-xs text-muted-foreground">
-                {search.data.results.length} results · {search.data.latency_ms} ms · {mode}
+              <p className="text-xs text-muted-foreground">
+                {search.data.results.length} results · {Math.round(search.data.latency_ms)} ms · {mode}
                 {rerank ? " + rerank" : ""}
               </p>
+              <StageTimings timings={search.data.timings_ms} order={["lexical", "embed_query", "vector", "fusion", "rerank"]} className="mb-3" />
+              {!search.data.timings_ms && <div className="mb-3" />}
               {debug && search.data.results[0]?.debug && (
                 <div className="mb-4 overflow-x-auto rounded-lg border">
                   <Table>
@@ -239,6 +248,11 @@ export default function SearchPage() {
                   </p>
                 ))}
               </div>
+              <StageTimings
+                timings={askTimings(ask.data)}
+                order={["retrieval", "generation"]}
+                className="mt-4 border-t pt-3"
+              />
             </div>
             <div>
               <h2 className="mb-2 text-xs font-medium tracking-wide text-muted-foreground uppercase">Sources</h2>

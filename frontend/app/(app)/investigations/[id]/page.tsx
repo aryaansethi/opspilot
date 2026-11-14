@@ -17,6 +17,7 @@ import { JiraDialog } from "@/components/investigation/jira-dialog"
 import { ParametersForm } from "@/components/investigation/parameters-form"
 import { ReportView } from "@/components/investigation/report-view"
 import { StateStepper } from "@/components/investigation/state-stepper"
+import { StageTimings } from "@/components/common/stage-timings"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -154,6 +155,11 @@ export default function InvestigationPage({ params }: { params: Promise<{ id: st
             </CardHeader>
             <CardContent>
               <StateStepper state={i.state} events={events} failedSteps={i.failed_steps} />
+              <StageTimings
+                timings={i.timings_ms}
+                order={["plan_llm", "knowledge_retrieval", "read_tools", "analysis_llm", "report"]}
+                className="mt-4 border-t pt-3 leading-relaxed"
+              />
             </CardContent>
           </Card>
           <Card>
