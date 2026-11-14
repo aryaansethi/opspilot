@@ -178,7 +178,8 @@ Questions are split 67 for **tuning** and 155 held out for **testing**; settings
 split only. A validator checks that every expected section exists and every expected fact appears in it
 word for word. Relevance is judged per document section; unanswerable questions are excluded from
 retrieval metrics. Every run stores the dataset hash, its configuration and per-question results, and
-rankings break ties by content, so a fresh database reproduces the same numbers.
+rankings break ties by content, so a fresh database reproduces the same numbers. An independent run
+from a clean checkout with empty volumes reproduced configurations A, B, C and E exactly.
 
 **Retrieval, dataset v2, held-out test split** (130 answerable questions; measured 2026-11-14, report
 [`20261114-181242-retrieval-test.md`](evaluation/reports/20261114-181242-retrieval-test.md)):
@@ -376,7 +377,7 @@ the comments in [docker-compose.yml](docker-compose.yml) and
 
 ### Optional: reranking in Docker
 
-The default image (about 0.5 GB) has no reranker, so it runs without it. To include it (about 2.1 GB,
+The default backend image (481 MB; the frontend image is 323 MB) has no reranker, so it runs without it. To include it (2.13 GB,
 CPU-only PyTorch):
 
 ```bash
@@ -420,6 +421,13 @@ make up && make test && make lint     # backend: pytest, ruff, mypy (no Ollama n
 make frontend-check                   # frontend: tsc, eslint, vitest, production build
 ```
 
+- **Backend tests** use real Postgres and LocalStack with fake models. They cover auth and workspace
+  isolation, ingestion, retrieval and fusion, citation and number validation, the investigation state
+  machine, MCP failures, approvals, job claims and the reaper, security regressions and the evaluation
+  metrics.
+- **Frontend tests** (Vitest) cover the API client (auth headers, a single shared refresh-and-retry,
+  error and 429 handling), SSE frame parsing, the timeline, search filters, safe links and formatting.
+
 GitHub Actions runs the same checks (`.github/workflows/`), plus a Docker image build and
 `terraform fmt` and `validate`.
 
@@ -456,6 +464,7 @@ docs/               DEMO.md recording script, screenshots
 | MCP argument validation | A tool runs only if it is registered in a reviewed catalog; JSON-schema validation; workspace allowlists for log groups, namespaces and repositories; per-tool timeouts and output caps; per-workspace tool switches |
 | Human approval | Write tools need an approved action that shows its exact arguments; approval rechecks permissions |
 | Audit logs | Tool invocations, approvals, uploads, integration changes and investigations; failed logins are logged with a hashed email |
+| Frontend | Access token kept in memory only; links from tool output render only for http(s); security headers (CSP `frame-ancestors 'none'`, `X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`); no document, tool or user content is rendered as raw HTML |
 | Prompt injection | Retrieved text is labelled as untrusted data; evidence tags can't be forged or closed; instruction-like lines are replaced before the LLM sees them; the planner can only choose predefined tasks; citation and number validation |
 | Reliability | Atomic job claims (no duplicate execution); a reaper marks stuck jobs; clear errors for timeouts, denied permissions and invalid upstream responses; investigations degrade to PARTIAL instead of failing |
 
