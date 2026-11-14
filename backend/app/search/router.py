@@ -15,7 +15,12 @@ from app.rag.generation.grounded import generate_grounded_answer
 from app.rag.generation.llm import LLMError, get_llm
 from app.rag.lexical.postgres_fts import NAME as LEXICAL_NAME
 from app.rag.pipeline import hybrid_search
-from app.rag.reranking.reranker import CrossEncoderReranker, Reranker
+from app.rag.reranking.reranker import (
+    CrossEncoderReranker,
+    Reranker,
+    default_reranker,
+    rerank_available,
+)
 from app.rag.types import Candidate, SearchFilters
 
 router = APIRouter(tags=["search"])
@@ -70,12 +75,11 @@ class SearchResponse(BaseModel):
 
 
 def _reranker(requested: bool | None) -> Reranker | None:
-    s = get_settings()
-    return (
-        CrossEncoderReranker(s.rerank_model)
-        if (requested if requested is not None else s.rerank_enabled)
-        else None
-    )
+    if requested is None:
+        return default_reranker()
+    if requested and not rerank_available():
+        raise AppError("Reranking is not installed on this server (uv sync --group rerank)")
+    return CrossEncoderReranker(get_settings().rerank_model) if requested else None
 
 
 def _result(c: Candidate, debug: bool) -> SearchResult:

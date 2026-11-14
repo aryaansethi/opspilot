@@ -8,6 +8,7 @@ import os
 
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://opspilot:opspilot@localhost:5433/opspilot_test"
 os.environ["ENVIRONMENT"] = "test"
+os.environ["RERANK_ENABLED"] = "false"  # deterministic and fast; reranking has its own tests
 os.environ["SQS_INGEST_QUEUE"] = "opspilot-ingest-test"
 os.environ["SQS_INVESTIGATE_QUEUE"] = "opspilot-investigate-test"
 os.environ["SQS_EVALUATE_QUEUE"] = "opspilot-evaluate-test"

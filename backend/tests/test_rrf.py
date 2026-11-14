@@ -86,3 +86,21 @@ def test_weighted_rrf_reduces_to_rrf_and_respects_weights() -> None:
     vector_heavy = weighted_rrf(lex, vec, k=60, lexical_weight=0.25)
     assert vector_heavy[0].document_title == "b"
     assert abs(vector_heavy[0].rrf_score - (0.25 / 62 + 1 / 61)) < 1e-12
+
+
+def test_default_reranker_is_automatic(monkeypatch: object) -> None:
+    import pytest
+
+    from app.core.config import get_settings
+    from app.rag.reranking import reranker as rr
+
+    mp: pytest.MonkeyPatch = monkeypatch  # type: ignore[assignment]
+    s = get_settings()
+    mp.setattr(s, "rerank_enabled", None)
+    mp.setattr(rr, "rerank_available", lambda: True)
+    assert rr.default_reranker() is not None  # installed → used automatically
+    mp.setattr(rr, "rerank_available", lambda: False)
+    assert rr.default_reranker() is None  # not installed → plain hybrid
+    mp.setattr(s, "rerank_enabled", False)
+    mp.setattr(rr, "rerank_available", lambda: True)
+    assert rr.default_reranker() is None  # explicitly off wins

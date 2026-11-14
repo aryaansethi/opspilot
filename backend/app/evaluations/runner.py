@@ -41,7 +41,7 @@ from app.rag.generation.llm import LLMProvider
 from app.rag.ingestion.parsers import parse
 from app.rag.lexical.postgres_fts import NAME as LEXICAL_NAME
 from app.rag.pipeline import Mode, hybrid_search
-from app.rag.reranking.reranker import CrossEncoderReranker, Reranker
+from app.rag.reranking.reranker import CrossEncoderReranker, Reranker, default_reranker
 
 DATASET_NAME = "opspilot-synthetic"
 _EVAL_USER_EMAIL = "evaluation@opspilot.local"
@@ -438,12 +438,14 @@ async def run_answers(
         raise AlreadyClaimed(str(run_id))
     ds = dataset or load_dataset()
     s = get_settings()
+    product_reranker = default_reranker()  # answers are measured with the product's retrieval
     ws_id = await ensure_eval_workspace(db, ds, embedder)
     config = {
         # Product default retrieval (the tuned fusion, as /ask uses it).
         "retrieval": "hybrid_rrf",
         "lexical_weight": s.fusion_lexical_weight,
         "lexical_depth": s.fusion_lexical_depth,
+        "reranker": product_reranker.name if product_reranker else None,
         "llm_model": llm.model,
         "embedding_model": embedder.model,
         "context_chunks": s.answer_context_chunks,
@@ -467,7 +469,12 @@ async def run_answers(
         for q in qs:
             t = time.perf_counter()
             out = await hybrid_search(
-                db, ws_id, q["question"], embedder=embedder, top_k=s.answer_context_chunks
+                db,
+                ws_id,
+                q["question"],
+                embedder=embedder,
+                reranker=product_reranker,
+                top_k=s.answer_context_chunks,
             )
             try:
                 g = await generate_grounded_answer(llm, q["question"], out.results)

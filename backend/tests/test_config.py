@@ -35,3 +35,10 @@ def test_production_requires_secure_cookie() -> None:
 def test_empty_aws_endpoint_means_real_aws(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("AWS_ENDPOINT_URL", "")
     assert Settings(_env_file=None).aws_endpoint_url is None
+
+
+def test_rerank_defaults_to_automatic(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("RERANK_ENABLED", raising=False)
+    assert Settings(_env_file=None).rerank_enabled is None
+    monkeypatch.setenv("RERANK_ENABLED", "false")
+    assert Settings(_env_file=None).rerank_enabled is False

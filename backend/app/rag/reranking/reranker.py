@@ -46,3 +46,17 @@ class CrossEncoderReranker:
         for c, s in zip(candidates, scores, strict=True):
             c.rerank_score = float(s)
         return sorted(candidates, key=lambda c: -(c.rerank_score or 0.0))
+
+
+def default_reranker() -> "Reranker | None":
+    """The product's reranking choice (settings.rerank_enabled; None = use it when installed)."""
+    from app.core.config import get_settings
+
+    s = get_settings()
+    enabled = rerank_available() if s.rerank_enabled is None else s.rerank_enabled
+    return _cached_reranker(s.rerank_model) if enabled else None
+
+
+@lru_cache(maxsize=2)
+def _cached_reranker(model: str) -> "CrossEncoderReranker":
+    return CrossEncoderReranker(model)

@@ -23,6 +23,7 @@ from app.mcp.invoker import ToolResult, invoke_tool
 from app.models import ConnectedIntegration, EvidenceItem, Investigation
 from app.rag.embeddings.provider import EmbeddingProvider
 from app.rag.pipeline import hybrid_search
+from app.rag.reranking.reranker import default_reranker
 from app.rag.types import SearchFilters
 
 _NUM = re.compile(r"\d+")
@@ -165,6 +166,7 @@ class Collector:
             filters=SearchFilters(source_types=source_types),
             top_k=top_k,
             query_vector=self._query_vector,
+            reranker=default_reranker(),
         )
         for rank, c in enumerate(out.results, start=1):
             loc = c.section_path or c.document_title

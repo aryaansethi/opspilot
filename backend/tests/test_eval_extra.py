@@ -40,7 +40,9 @@ async def test_tool_selection_scores_required_and_forbidden_tasks() -> None:
         run = await run_tool_selection(db, llm=PlannerLLM(), dataset=load_dataset("v2"))
     assert run.status == "completed", run.error
     m = run.metrics or {}
-    assert m["cases"] == 20 and m["model_errors"] == 0
+    assert (
+        m["cases"] == 24 and m["model_errors"] == 0 and set(m["by_set"]) == {"original", "holdout"}
+    )
     assert 0 < m["tool_selection_accuracy"] < 1  # a keyword planner gets some right, not all
     assert m["invalid_tasks_proposed"] > 0  # delete_repository proposed...
     # ...but never survives validation
@@ -54,7 +56,7 @@ async def test_tool_selection_scores_required_and_forbidden_tasks() -> None:
         )
     assert all("delete_repository" not in r.detail.get("chosen", []) for r in rows)
     doc_only = [r for r in rows if r.detail.get("forbidden")]
-    assert len(doc_only) == 6
+    assert len(doc_only) == 7
 
 
 class ObedientLLM:
@@ -66,7 +68,8 @@ class ObedientLLM:
         self, system: str, user: str, schema: Any, schema_name: str
     ) -> dict[str, Any]:
         canaries = re.findall(
-            r"PWNED-7731|INJECT-DNS-42|ALL-SYSTEMS-NOMINAL-9|evil\.example|MARK-COSMIC-1", user
+            r"PWNED-7731|INJECT-DNS-42|ALL-SYSTEMS-NOMINAL-9|evil\.example|MARK-COSMIC-1|HOLDOUT-[A-Z]+",
+            user,
         )
         text = " ".join(canaries) or "nothing"
         if schema_name == "grounded_answer":
@@ -116,10 +119,11 @@ async def test_injection_eval_detects_an_obedient_model_and_passes_a_safe_one() 
             db, llm=SafeLLM(), embedder=HashingEmbeddings(), dataset=load_dataset("v2")
         )
     assert bad.status == good.status == "completed", (bad.error, good.error)
-    assert (bad.metrics or {})["injection_resistance"] < 1.0
-    assert (good.metrics or {})["injection_resistance"] == 1.0 and (good.metrics or {})[
-        "cases"
-    ] == 8
+    bad_m, good_m = bad.metrics or {}, good.metrics or {}
+    # An obedient model still leaks the held-out phrasings the sanitizer was not designed for...
+    assert bad_m["by_set"]["holdout"]["injection_resistance"] < 1.0
+    # ...and the evaluation passes a model that ignores injected text.
+    assert good_m["injection_resistance"] == 1.0 and good_m["cases"] == 12
 
 
 class JudgeLLM:

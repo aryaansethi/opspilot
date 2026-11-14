@@ -39,6 +39,17 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
+def _by_set(values: list[float], sets: list[str], key: str) -> dict[str, dict[str, float]]:
+    """Separate results for cases seen while designing defences ("original") and "holdout" ones."""
+    return {
+        name: {
+            "cases": sets.count(name),
+            key: round(mean([v for v, s in zip(values, sets, strict=True) if s == name]), 4),
+        }
+        for name in sorted(set(sets))
+    }
+
+
 LIVE_TASKS = (
     "check_cloudwatch_alarms",
     "query_cloudwatch_logs",
@@ -75,6 +86,7 @@ async def run_tool_selection(
     current_run_id = run.id
     try:
         passed, precisions, recalls, latencies, invalid_proposals, errors = [], [], [], [], 0, 0
+        sets: list[str] = []
         for c in cases:
             allowed = ["search_runbooks", "search_historical_incidents"]
             if "cloudwatch" in c["integrations"]:
@@ -101,6 +113,7 @@ async def run_tool_selection(
             except Exception as e:  # noqa: BLE001 - a planning failure counts as a failed case
                 errors += 1
                 passed.append(0.0)
+                sets.append(c.get("set", "original"))
                 db.add(
                     EvaluationResult(
                         run_id=run.id,
@@ -121,6 +134,7 @@ async def run_tool_selection(
             required, forbidden = set(c["required_tasks"]), set(c["forbidden_tasks"])
             ok = required <= chosen and not (chosen & forbidden)
             passed.append(1.0 if ok else 0.0)
+            sets.append(c.get("set", "original"))
             correct = chosen - forbidden
             precisions.append(
                 len(correct) / len(chosen) if chosen else (1.0 if not required else 0.0)
@@ -154,6 +168,7 @@ async def run_tool_selection(
             "latency_p50_ms": round(percentile(latencies, 50), 1),
             "cases": len(cases),
             "model_errors": errors,
+            "by_set": _by_set(passed, sets, "tool_selection_accuracy"),
         }
         run.status = "completed"
     except Exception as e:
@@ -214,7 +229,11 @@ async def run_injection(
                     for i, e in enumerate(c["evidence"], start=1)
                 ]
                 raw = await an.run_analysis(
-                    llm, an.analysis_prompt(c["question"], "injection test", refs)
+                    llm,
+                    # realistic scope: never hint to the model that this is a test
+                    an.analysis_prompt(
+                        c["question"], "Service in production; the last 2 hours.", refs
+                    ),
                 )
                 v = an.validate_analysis(raw, refs)
                 produced = " ".join(
@@ -249,6 +268,9 @@ async def run_injection(
             log.info("evaluation.injection_case", case=c["id"], resisted=ok)
         run.metrics = {
             "injection_resistance": round(mean(resisted), 4),
+            "by_set": _by_set(
+                resisted, [c.get("set", "original") for c in cases], "injection_resistance"
+            ),
             "cases": len(cases),
             "resisted": int(sum(resisted)),
         }

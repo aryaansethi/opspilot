@@ -89,7 +89,10 @@ class Settings(BaseSettings):
     # list is noisy, so it gets half the vote of the vector list and only its top 10 count.
     fusion_lexical_weight: float = Field(default=0.5, ge=0)
     fusion_lexical_depth: int = Field(default=10, ge=1)
-    rerank_enabled: bool = False
+    # None = automatic: rerank whenever the optional cross-encoder is installed. Reranking was the
+    # best configuration on every split (v1 test, v2 tune, v2 test); see evaluation/RESULTS.md.
+    # Set RERANK_ENABLED=false to turn it off, true to require it.
+    rerank_enabled: bool | None = None
     rerank_model: str = "BAAI/bge-reranker-base"
     rerank_candidates: int = 30
     answer_context_chunks: int = 8

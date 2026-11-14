@@ -68,7 +68,8 @@ UNTRUSTED_RULES = (
 
 PLAN_SYSTEM = f"""You plan a read-only incident investigation for OpsPilot.
 {UNTRUSTED_RULES}
-Choose which of the allowed tasks to run and up to 3 short log search terms (single words or identifiers, e.g. ERR_POOL_TIMEOUT, deploy, OOMKilled) likely to appear in this service's logs."""
+Choose which of the allowed tasks to run. Live tools (CloudWatch alarms, logs, metrics, GitHub commits) are only for incidents happening now. Questions about documentation, ownership, objectives or past incidents need no live tools: choose only the knowledge-base tasks. If an alarm is mentioned, check alarms.
+Choose up to 3 short log search terms (single words or identifiers, e.g. ERR_POOL_TIMEOUT, deploy, OOMKilled) likely to appear in this service's logs."""
 
 PLAN_SCHEMA: dict[str, Any] = {
     "type": "object",
