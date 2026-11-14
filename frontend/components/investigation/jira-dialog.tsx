@@ -16,7 +16,7 @@ function draft(inv: Investigation, report: Report): JiraIssueFields {
   return {
     project: "OPS",
     issue_type: "Incident",
-    summary: `${inv.service ?? "Service"}: ${inv.question}`.slice(0, 120),
+    summary: (inv.service && !inv.question.toLowerCase().startsWith(inv.service.toLowerCase()) ? `${inv.service}: ${inv.question}` : inv.question).slice(0, 120),
     description: [report.overview, "", "Observed facts:", ...report.observed_facts.map((f) => `- ${f.text}`), "", "Recommended diagnostics:", ...report.recommended_diagnostics.map((d) => `- ${d}`)].join("\n"),
     labels: [inv.incident_type, inv.service].filter(Boolean) as string[],
   }

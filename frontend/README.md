@@ -65,6 +65,18 @@ Other things worth knowing:
 
 When the backend's OpenAPI types settle, `lib/types/api.ts` can be generated with `openapi-typescript`.
 
+## Docker
+
+`Dockerfile` builds a small standalone server (`output: "standalone"` in `next.config.ts`). Because
+`NEXT_PUBLIC_*` values are inlined at build time, the API URL is a build argument, and it's the URL the
+**browser** calls (the host-published API port), not a Compose service name:
+
+```bash
+docker build --build-arg NEXT_PUBLIC_API_BASE_URL=http://localhost:8080/api/v1 -t opspilot-frontend .
+```
+
+`docker compose --profile app up` (repository root) builds and runs it on port 3000 next to the API on 8080.
+
 ## CI
 
 `.github/workflows/frontend.yml` runs `npm ci`, `tsc --noEmit`, `npm run lint` and `npm run build` on pushes and pull requests that touch `frontend/`.

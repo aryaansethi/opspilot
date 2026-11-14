@@ -12,9 +12,9 @@ export function KeyValueList({ value }: { value: Record<string, unknown> }) {
   return (
     <dl className="divide-y rounded-md border text-sm">
       {Object.entries(value).map(([k, v]) => (
-        <div key={k} className="grid grid-cols-[minmax(90px,30%)_1fr] gap-3 px-3 py-2">
+        <div key={k} className="grid grid-cols-[minmax(90px,30%)_minmax(0,1fr)] gap-3 px-3 py-2">
           <dt className="font-mono text-xs text-muted-foreground">{k}</dt>
-          <dd className="break-words font-mono text-xs">{typeof v === "string" ? v : JSON.stringify(v)}</dd>
+          <dd className="font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{typeof v === "string" ? v : JSON.stringify(v)}</dd>
         </div>
       ))}
     </dl>
