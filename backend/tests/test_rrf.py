@@ -72,3 +72,17 @@ def test_rrf_ties_do_not_depend_on_random_ids() -> None:
 
     # alpha (2,2) ties with beta (1,3) and gamma (3,1) on RRF score in some orders; order must be stable
     assert build(1) == build(2) == build(3)
+
+
+def test_weighted_rrf_reduces_to_rrf_and_respects_weights() -> None:
+    from app.rag.fusion.rrf import weighted_rrf
+
+    lex = [cand("a", lex=1), cand("b", lex=2)]
+    vec = [cand("b", vec=1), cand("a", vec=2)]
+    equal = weighted_rrf(lex, vec, k=60)
+    assert abs(equal[0].rrf_score - (1 / 61 + 1 / 62)) < 1e-12  # a and b tie at equal weights
+    lex = [cand("a", lex=1), cand("b", lex=2)]
+    vec = [cand("b", vec=1), cand("a", vec=2)]
+    vector_heavy = weighted_rrf(lex, vec, k=60, lexical_weight=0.25)
+    assert vector_heavy[0].document_title == "b"
+    assert abs(vector_heavy[0].rrf_score - (0.25 / 62 + 1 / 61)) < 1e-12

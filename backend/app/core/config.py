@@ -71,15 +71,20 @@ class Settings(BaseSettings):
     investigation_max_window_hours: int = 24
 
     # --- evaluation ---
-    evaluation_dataset_dir: str = str(
-        __import__("pathlib").Path(__file__).resolve().parents[3] / "evaluation" / "datasets" / "v1"
+    evaluation_datasets_root: str = str(
+        __import__("pathlib").Path(__file__).resolve().parents[3] / "evaluation" / "datasets"
     )
+    evaluation_default_version: str = "v2"
 
     # --- retrieval ---
     chunk_target_tokens: int = 500
     chunk_overlap_tokens: int = 80
     retrieval_candidates: int = 50
     rrf_k: int = Field(default=60, ge=1)
+    # Tuned on dataset v2's tune split (evaluation/experiments/fusion_sweep-v2.md): the lexical
+    # list is noisy, so it gets half the vote of the vector list and only its top 10 count.
+    fusion_lexical_weight: float = Field(default=0.5, ge=0)
+    fusion_lexical_depth: int = Field(default=10, ge=1)
     rerank_enabled: bool = False
     rerank_model: str = "BAAI/bge-reranker-base"
     rerank_candidates: int = 30

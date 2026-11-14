@@ -1,0 +1,380 @@
+{
+  "environment": {
+    "python": "3.12.13",
+    "machine": "arm64",
+    "system": "Darwin",
+    "embedding_model": "bge-m3",
+    "llm_model": "opspilot-qwen3-8b",
+    "generated_at": "2026-11-14T17:52:51.437153+00:00"
+  },
+  "runs": [
+    {
+      "id": "3eaba7c5-6ec0-4acf-b6d7-aeb57b2353fe",
+      "config_label": "C_hybrid_rrf",
+      "config": {
+        "mode": "hybrid",
+        "rerank": false,
+        "lexical": "postgres_fts_ts_rank_cd",
+        "embedding_model": "bge-m3",
+        "reranker": null,
+        "rrf_k": 60,
+        "lexical_weight": 1.0,
+        "lexical_depth": 50,
+        "candidates": 50,
+        "rerank_candidates": null,
+        "top_k": 10,
+        "chunk_target_tokens": 500,
+        "chunk_overlap_tokens": 80
+      },
+      "status": "completed",
+      "metrics": {
+        "recall_at_5": 0.9123,
+        "recall_at_10": 0.9912,
+        "precision_at_5": 0.2281,
+        "mrr": 0.805,
+        "ndcg_at_5": 0.8189,
+        "ndcg_at_10": 0.847,
+        "latency_p50_ms": 145.8,
+        "latency_p95_ms": 162.6,
+        "questions": 67,
+        "answerable_questions": 57,
+        "by_kind": {
+          "ambiguous": {
+            "n": 4,
+            "recall_at_5": 0.75,
+            "mrr": 0.7917,
+            "ndcg_at_10": 0.8391
+          },
+          "lexical": {
+            "n": 18,
+            "recall_at_5": 0.8889,
+            "mrr": 0.9038,
+            "ndcg_at_10": 0.9249
+          },
+          "multi": {
+            "n": 6,
+            "recall_at_5": 0.75,
+            "mrr": 0.6389,
+            "ndcg_at_10": 0.6567
+          },
+          "semantic": {
+            "n": 29,
+            "recall_at_5": 0.9828,
+            "mrr": 0.7799,
+            "ndcg_at_10": 0.839
+          }
+        },
+        "by_topic": {
+          "database": {
+            "n": 10,
+            "recall_at_5": 0.85,
+            "mrr": 0.7625,
+            "ndcg_at_10": 0.8183
+          },
+          "deployment": {
+            "n": 10,
+            "recall_at_5": 0.95,
+            "mrr": 0.7783,
+            "ndcg_at_10": 0.8352
+          },
+          "error": {
+            "n": 14,
+            "recall_at_5": 0.9643,
+            "mrr": 0.8929,
+            "ndcg_at_10": 0.916
+          },
+          "latency": {
+            "n": 11,
+            "recall_at_5": 0.8636,
+            "mrr": 0.7727,
+            "ndcg_at_10": 0.802
+          },
+          "other": {
+            "n": 12,
+            "recall_at_5": 0.9167,
+            "mrr": 0.7897,
+            "ndcg_at_10": 0.8413
+          }
+        }
+      },
+      "dataset_hash": "22e55efdd424b57a59221bf372b1dffa9331508e9df6a911948b6e0e93f42d8e",
+      "split": "tune"
+    },
+    {
+      "id": "15e2de94-7bcb-4122-bc35-bb8f2be4b62a",
+      "config_label": "D_hybrid_rrf_rerank",
+      "config": {
+        "mode": "hybrid",
+        "rerank": true,
+        "lexical": "postgres_fts_ts_rank_cd",
+        "embedding_model": "bge-m3",
+        "reranker": "BAAI/bge-reranker-base",
+        "rrf_k": 60,
+        "lexical_weight": 1.0,
+        "lexical_depth": 50,
+        "candidates": 50,
+        "rerank_candidates": 30,
+        "top_k": 10,
+        "chunk_target_tokens": 500,
+        "chunk_overlap_tokens": 80
+      },
+      "status": "completed",
+      "metrics": {
+        "recall_at_5": 0.9737,
+        "recall_at_10": 0.9825,
+        "precision_at_5": 0.2421,
+        "mrr": 0.8529,
+        "ndcg_at_5": 0.8749,
+        "ndcg_at_10": 0.8785,
+        "latency_p50_ms": 431.6,
+        "latency_p95_ms": 486.5,
+        "questions": 67,
+        "answerable_questions": 57,
+        "by_kind": {
+          "ambiguous": {
+            "n": 4,
+            "recall_at_5": 0.75,
+            "mrr": 0.5,
+            "ndcg_at_10": 0.5655
+          },
+          "lexical": {
+            "n": 18,
+            "recall_at_5": 1.0,
+            "mrr": 0.8861,
+            "ndcg_at_10": 0.9138
+          },
+          "multi": {
+            "n": 6,
+            "recall_at_5": 1.0,
+            "mrr": 0.75,
+            "ndcg_at_10": 0.7764
+          },
+          "semantic": {
+            "n": 29,
+            "recall_at_5": 0.9828,
+            "mrr": 0.9023,
+            "ndcg_at_10": 0.9208
+          }
+        },
+        "by_topic": {
+          "database": {
+            "n": 10,
+            "recall_at_5": 1.0,
+            "mrr": 0.825,
+            "ndcg_at_10": 0.8755
+          },
+          "deployment": {
+            "n": 10,
+            "recall_at_5": 0.95,
+            "mrr": 0.8333,
+            "ndcg_at_10": 0.8722
+          },
+          "error": {
+            "n": 14,
+            "recall_at_5": 1.0,
+            "mrr": 0.881,
+            "ndcg_at_10": 0.8966
+          },
+          "latency": {
+            "n": 11,
+            "recall_at_5": 0.9091,
+            "mrr": 0.8182,
+            "ndcg_at_10": 0.8205
+          },
+          "other": {
+            "n": 12,
+            "recall_at_5": 1.0,
+            "mrr": 0.8917,
+            "ndcg_at_10": 0.9181
+          }
+        }
+      },
+      "dataset_hash": "22e55efdd424b57a59221bf372b1dffa9331508e9df6a911948b6e0e93f42d8e",
+      "split": "tune"
+    },
+    {
+      "id": "3031e96f-7240-4c9c-af39-8f0f9beecff0",
+      "config_label": "E_hybrid_weighted",
+      "config": {
+        "mode": "hybrid",
+        "rerank": false,
+        "lexical": "postgres_fts_ts_rank_cd",
+        "embedding_model": "bge-m3",
+        "reranker": null,
+        "rrf_k": 60,
+        "lexical_weight": 0.5,
+        "lexical_depth": 10,
+        "candidates": 50,
+        "rerank_candidates": null,
+        "top_k": 10,
+        "chunk_target_tokens": 500,
+        "chunk_overlap_tokens": 80
+      },
+      "status": "completed",
+      "metrics": {
+        "recall_at_5": 0.9298,
+        "recall_at_10": 0.9912,
+        "precision_at_5": 0.2351,
+        "mrr": 0.8228,
+        "ndcg_at_5": 0.837,
+        "ndcg_at_10": 0.8598,
+        "latency_p50_ms": 148.0,
+        "latency_p95_ms": 162.4,
+        "questions": 67,
+        "answerable_questions": 57,
+        "by_kind": {
+          "ambiguous": {
+            "n": 4,
+            "recall_at_5": 0.75,
+            "mrr": 0.7917,
+            "ndcg_at_10": 0.8391
+          },
+          "lexical": {
+            "n": 18,
+            "recall_at_5": 0.9444,
+            "mrr": 0.9093,
+            "ndcg_at_10": 0.9302
+          },
+          "multi": {
+            "n": 6,
+            "recall_at_5": 0.75,
+            "mrr": 0.6667,
+            "ndcg_at_10": 0.6662
+          },
+          "semantic": {
+            "n": 29,
+            "recall_at_5": 0.9828,
+            "mrr": 0.8057,
+            "ndcg_at_10": 0.859
+          }
+        },
+        "by_topic": {
+          "database": {
+            "n": 10,
+            "recall_at_5": 0.95,
+            "mrr": 0.82,
+            "ndcg_at_10": 0.8609
+          },
+          "deployment": {
+            "n": 10,
+            "recall_at_5": 0.95,
+            "mrr": 0.7867,
+            "ndcg_at_10": 0.8431
+          },
+          "error": {
+            "n": 14,
+            "recall_at_5": 0.9643,
+            "mrr": 0.8929,
+            "ndcg_at_10": 0.9154
+          },
+          "latency": {
+            "n": 11,
+            "recall_at_5": 0.8636,
+            "mrr": 0.7879,
+            "ndcg_at_10": 0.8093
+          },
+          "other": {
+            "n": 12,
+            "recall_at_5": 0.9167,
+            "mrr": 0.8056,
+            "ndcg_at_10": 0.8541
+          }
+        }
+      },
+      "dataset_hash": "22e55efdd424b57a59221bf372b1dffa9331508e9df6a911948b6e0e93f42d8e",
+      "split": "tune"
+    },
+    {
+      "id": "98ff4da3-09e2-4d9a-9e63-bb80638d161b",
+      "config_label": "F_hybrid_weighted_rerank",
+      "config": {
+        "mode": "hybrid",
+        "rerank": true,
+        "lexical": "postgres_fts_ts_rank_cd",
+        "embedding_model": "bge-m3",
+        "reranker": "BAAI/bge-reranker-base",
+        "rrf_k": 60,
+        "lexical_weight": 0.5,
+        "lexical_depth": 10,
+        "candidates": 50,
+        "rerank_candidates": 30,
+        "top_k": 10,
+        "chunk_target_tokens": 500,
+        "chunk_overlap_tokens": 80
+      },
+      "status": "completed",
+      "metrics": {
+        "recall_at_5": 0.9737,
+        "recall_at_10": 0.9825,
+        "precision_at_5": 0.2421,
+        "mrr": 0.8529,
+        "ndcg_at_5": 0.8749,
+        "ndcg_at_10": 0.8787,
+        "latency_p50_ms": 441.1,
+        "latency_p95_ms": 496.6,
+        "questions": 67,
+        "answerable_questions": 57,
+        "by_kind": {
+          "ambiguous": {
+            "n": 4,
+            "recall_at_5": 0.75,
+            "mrr": 0.5,
+            "ndcg_at_10": 0.5655
+          },
+          "lexical": {
+            "n": 18,
+            "recall_at_5": 1.0,
+            "mrr": 0.8861,
+            "ndcg_at_10": 0.9138
+          },
+          "multi": {
+            "n": 6,
+            "recall_at_5": 1.0,
+            "mrr": 0.75,
+            "ndcg_at_10": 0.7764
+          },
+          "semantic": {
+            "n": 29,
+            "recall_at_5": 0.9828,
+            "mrr": 0.9023,
+            "ndcg_at_10": 0.9213
+          }
+        },
+        "by_topic": {
+          "database": {
+            "n": 10,
+            "recall_at_5": 1.0,
+            "mrr": 0.825,
+            "ndcg_at_10": 0.8755
+          },
+          "deployment": {
+            "n": 10,
+            "recall_at_5": 0.95,
+            "mrr": 0.8333,
+            "ndcg_at_10": 0.8736
+          },
+          "error": {
+            "n": 14,
+            "recall_at_5": 1.0,
+            "mrr": 0.881,
+            "ndcg_at_10": 0.8966
+          },
+          "latency": {
+            "n": 11,
+            "recall_at_5": 0.9091,
+            "mrr": 0.8182,
+            "ndcg_at_10": 0.8205
+          },
+          "other": {
+            "n": 12,
+            "recall_at_5": 1.0,
+            "mrr": 0.8917,
+            "ndcg_at_10": 0.9181
+          }
+        }
+      },
+      "dataset_hash": "22e55efdd424b57a59221bf372b1dffa9331508e9df6a911948b6e0e93f42d8e",
+      "split": "tune"
+    }
+  ]
+}

@@ -28,7 +28,7 @@ COPY --chown=opspilot:opspilot evaluation/datasets /evaluation/datasets
 # Seed/smoke scripts, e.g.: docker compose run --rm api python /app/scripts/seed_cloudwatch.py
 COPY --chown=opspilot:opspilot scripts /app/scripts
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONPATH=/app ENVIRONMENT=production \
-    MCP_HOST=0.0.0.0 EVALUATION_DATASET_DIR=/evaluation/datasets/v1
+    MCP_HOST=0.0.0.0 EVALUATION_DATASETS_ROOT=/evaluation/datasets
 USER opspilot
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3).status == 200 else 1)" || exit 1

@@ -44,7 +44,7 @@ from app.rag.reranking.reranker import CrossEncoderReranker, Reranker
 DATASET_NAME = "opspilot-synthetic"
 _EVAL_USER_EMAIL = "evaluation@opspilot.local"
 _CORPUS_LOCK_KEY = 0x0F5_C0_4B  # arbitrary constant: one advisory lock for the evaluation corpus
-EVAL_WORKSPACE_SLUG = "opspilot-eval-v1"
+EVAL_WORKSPACE_PREFIX = "opspilot-eval-"  # one isolated workspace per dataset version
 
 
 @dataclass(frozen=True)
@@ -52,13 +52,20 @@ class RetrievalConfig:
     label: str
     mode: Mode
     rerank: bool
+    lexical_weight: float = 1.0  # hybrid only
+    lexical_depth: int = 50  # hybrid only: how many lexical candidates take part in fusion
 
 
+# A-D are frozen for fair comparison with earlier results; E/F are the tuned fusion.
 RETRIEVAL_CONFIGS = {
     "A_lexical": RetrievalConfig("A_lexical", "lexical", False),
     "B_vector": RetrievalConfig("B_vector", "vector", False),
     "C_hybrid_rrf": RetrievalConfig("C_hybrid_rrf", "hybrid", False),
     "D_hybrid_rrf_rerank": RetrievalConfig("D_hybrid_rrf_rerank", "hybrid", True),
+    "E_hybrid_weighted": RetrievalConfig("E_hybrid_weighted", "hybrid", False, 0.5, 10),
+    "F_hybrid_weighted_rerank": RetrievalConfig(
+        "F_hybrid_weighted_rerank", "hybrid", True, 0.5, 10
+    ),
 }
 
 
@@ -70,8 +77,22 @@ class Dataset:
     questions: list[dict[str, Any]]
 
 
-def load_dataset(path: str | None = None) -> Dataset:
-    root = Path(path or get_settings().evaluation_dataset_dir)
+def available_versions() -> list[str]:
+    root = Path(get_settings().evaluation_datasets_root)
+    return (
+        sorted(p.name for p in root.iterdir() if (p / "questions.jsonl").exists())
+        if root.exists()
+        else []
+    )
+
+
+def load_dataset(version: str | None = None, path: str | None = None) -> Dataset:
+    s = get_settings()
+    root = (
+        Path(path)
+        if path
+        else Path(s.evaluation_datasets_root) / (version or s.evaluation_default_version)
+    )
     corpus = {p.stem: p.read_bytes() for p in sorted((root / "corpus").glob("*.md"))}
     questions = [
         json.loads(line)
@@ -103,7 +124,8 @@ async def ensure_eval_workspace(
     """
     await db.commit()  # start a fresh transaction so the lock covers all reads below
     await db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _CORPUS_LOCK_KEY})
-    ws = await db.scalar(select(Workspace).where(Workspace.slug == EVAL_WORKSPACE_SLUG))
+    slug = f"{EVAL_WORKSPACE_PREFIX}{ds.version}"
+    ws = await db.scalar(select(Workspace).where(Workspace.slug == slug))
     if ws is None:
         user = await db.scalar(select(User).where(User.email == _EVAL_USER_EMAIL))
         if user is None:
@@ -113,7 +135,7 @@ async def ensure_eval_workspace(
                 password_hash=hash_password(secrets.token_urlsafe(32)),
             )  # nobody can sign in as this user
             db.add(user)
-        ws = Workspace(name="Evaluation (synthetic v1)", slug=EVAL_WORKSPACE_SLUG)
+        ws = Workspace(name=f"Evaluation (synthetic {ds.version})", slug=slug)
         db.add(ws)
         await db.flush()
         db.add(WorkspaceMember(workspace_id=ws.id, user_id=user.id, role="owner"))
@@ -269,6 +291,8 @@ async def run_retrieval(
         "embedding_model": embedder.model,
         "reranker": rr.name if rr else None,
         "rrf_k": s.rrf_k,
+        "lexical_weight": cfg.lexical_weight if cfg.mode == "hybrid" else None,
+        "lexical_depth": cfg.lexical_depth if cfg.mode == "hybrid" else None,
         "candidates": s.retrieval_candidates,
         "rerank_candidates": s.rerank_candidates if rr else None,
         "top_k": 10,
@@ -290,7 +314,15 @@ async def run_retrieval(
         for q in _questions(ds, split):
             t = time.perf_counter()
             out = await hybrid_search(
-                db, ws_id, q["question"], embedder=embedder, reranker=rr, mode=cfg.mode, top_k=10
+                db,
+                ws_id,
+                q["question"],
+                embedder=embedder,
+                reranker=rr,
+                mode=cfg.mode,
+                top_k=10,
+                lexical_weight=cfg.lexical_weight,
+                lexical_depth=cfg.lexical_depth,
             )
             latency = (time.perf_counter() - t) * 1000
             latencies.append(latency)
@@ -301,7 +333,11 @@ async def run_retrieval(
                 "split": q["split"],
             }
             if q["answerable"]:
-                sc = score(ranked, [Expected(r["document"], r["section"]) for r in q["relevant"]])
+                sc = score(
+                    ranked,
+                    [Expected(r["document"], r["section"]) for r in q["relevant"]],
+                    q.get("match", "all"),
+                )
                 scores.append((q, sc))
                 detail.update(
                     recall_at_5=sc.recall_at_5,
@@ -336,11 +372,25 @@ async def run_retrieval(
                     )
                 )
 
-        def agg(attr: str, kind: str | None = None) -> float:
+        def agg(attr: str, kind: str | None = None, field: str = "kind") -> float:
             return round(
-                mean([getattr(sc, attr) for q, sc in scores if kind is None or q["kind"] == kind]),
+                mean(
+                    [getattr(sc, attr) for q, sc in scores if kind is None or q.get(field) == kind]
+                ),
                 4,
             )
+
+        def breakdown(field: str) -> dict[str, dict[str, float]]:
+            values = sorted({str(q.get(field)) for q, _ in scores if q.get(field)})
+            return {
+                v: {
+                    "n": sum(1 for q, _ in scores if q.get(field) == v),
+                    "recall_at_5": agg("recall_at_5", v, field),
+                    "mrr": agg("reciprocal_rank", v, field),
+                    "ndcg_at_10": agg("ndcg_at_10", v, field),
+                }
+                for v in values
+            }
 
         run.metrics = {
             "recall_at_5": agg("recall_at_5"),
@@ -353,14 +403,8 @@ async def run_retrieval(
             "latency_p95_ms": round(percentile(latencies, 95), 1),
             "questions": len(latencies),
             "answerable_questions": len(scores),
-            "by_kind": {
-                k: {
-                    "n": sum(1 for q, _ in scores if q["kind"] == k),
-                    "recall_at_5": agg("recall_at_5", k),
-                    "mrr": agg("reciprocal_rank", k),
-                }
-                for k in ("lexical", "semantic", "multi")
-            },
+            "by_kind": breakdown("kind"),
+            "by_topic": breakdown("topic"),
         }
         run.status = "completed"
     except Exception as e:
@@ -386,7 +430,10 @@ async def run_answers(
     s = get_settings()
     ws_id = await ensure_eval_workspace(db, ds, embedder)
     config = {
+        # Product default retrieval (the tuned fusion, as /ask uses it).
         "retrieval": "hybrid_rrf",
+        "lexical_weight": s.fusion_lexical_weight,
+        "lexical_depth": s.fusion_lexical_depth,
         "llm_model": llm.model,
         "embedding_model": embedder.model,
         "context_chunks": s.answer_context_chunks,

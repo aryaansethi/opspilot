@@ -11,18 +11,33 @@ from app.rag.types import Candidate
 def reciprocal_rank_fusion(
     lexical: list[Candidate], vector: list[Candidate], k: int = 60
 ) -> list[Candidate]:
+    """Standard equal-weight RRF (configs C and D)."""
+    return weighted_rrf(lexical, vector, k=k, lexical_weight=1.0, vector_weight=1.0)
+
+
+def weighted_rrf(
+    lexical: list[Candidate],
+    vector: list[Candidate],
+    k: int = 60,
+    lexical_weight: float = 1.0,
+    vector_weight: float = 1.0,
+) -> list[Candidate]:
+    """RRF(d) = w_lex / (k + rank_lex(d)) + w_vec / (k + rank_vec(d)).
+
+    With both weights 1.0 this is exactly standard RRF.
+    """
     merged: dict[uuid.UUID, Candidate] = {}
     for c in lexical:
         merged[c.chunk_id] = c
-        c.rrf_score = 1.0 / (k + (c.lexical_rank or 0))
+        c.rrf_score = lexical_weight / (k + (c.lexical_rank or 0))
     for c in vector:
         existing = merged.get(c.chunk_id)
         if existing is None:
             merged[c.chunk_id] = c
-            c.rrf_score = 1.0 / (k + (c.vector_rank or 0))
+            c.rrf_score = vector_weight / (k + (c.vector_rank or 0))
         else:
             existing.vector_rank, existing.vector_distance = c.vector_rank, c.vector_distance
-            existing.rrf_score += 1.0 / (k + (c.vector_rank or 0))
+            existing.rrf_score += vector_weight / (k + (c.vector_rank or 0))
     # Equal scores are ordered by content, never by random ids, so rankings reproduce across DBs.
     return sorted(
         merged.values(),

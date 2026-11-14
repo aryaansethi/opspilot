@@ -42,9 +42,14 @@ class QuestionScores:
     first_relevant_rank: int | None
 
 
-def score(ranked: list[Retrieved], expected: list[Expected]) -> QuestionScores:
+def score(ranked: list[Retrieved], expected: list[Expected], mode: str = "all") -> QuestionScores:
+    """mode="all": every expected section should be found. mode="any" (ambiguous questions):
+    the expected sections are alternatives, so finding any one of them is a full hit."""
     assert expected, "score() is only defined for answerable questions"
     matches = [match(r, expected) for r in ranked]
+    if mode == "any":
+        matches = [None if m is None else 0 for m in matches]
+        expected = expected[:1]
 
     def recall(k: int) -> float:
         return len({m for m in matches[:k] if m is not None}) / len(expected)

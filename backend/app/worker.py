@@ -18,7 +18,13 @@ from app.core.logging import configure_logging, log
 from app.db.session import dispose_engine, get_sessionmaker
 from app.documents import storage
 from app.documents.ingestion import ingest_document
-from app.evaluations.runner import RETRIEVAL_CONFIGS, mark_run_failed, run_answers, run_retrieval
+from app.evaluations.runner import (
+    RETRIEVAL_CONFIGS,
+    load_dataset,
+    mark_run_failed,
+    run_answers,
+    run_retrieval,
+)
 from app.investigations.engine import run_investigation
 from app.rag.embeddings.provider import get_embedding_provider
 from app.rag.generation.llm import get_llm
@@ -58,6 +64,7 @@ async def handle_evaluation(body: dict[str, Any]) -> None:
 async def _run_evaluation(body: dict[str, Any], run_id: uuid.UUID) -> None:
     label = str(body["config_label"])
     split = str(body.get("split", "test"))
+    dataset = load_dataset(body.get("dataset_version"))  # older messages: default version
     async with get_sessionmaker()() as db:
         if label in RETRIEVAL_CONFIGS:
             await run_retrieval(
@@ -66,6 +73,7 @@ async def _run_evaluation(body: dict[str, Any], run_id: uuid.UUID) -> None:
                 embedder=get_embedding_provider(),
                 split=split,
                 run_id=run_id,
+                dataset=dataset,
             )
         else:
             limit = body.get("limit")
@@ -76,6 +84,7 @@ async def _run_evaluation(body: dict[str, Any], run_id: uuid.UUID) -> None:
                 split=split,
                 run_id=run_id,
                 limit=int(limit) if limit else None,
+                dataset=dataset,
             )
 
 

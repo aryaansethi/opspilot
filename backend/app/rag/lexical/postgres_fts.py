@@ -48,10 +48,21 @@ def to_candidate(chunk: DocumentChunk, doc: Document) -> Candidate:
 
 
 async def lexical_search(
-    db: AsyncSession, workspace_id: uuid.UUID, query: str, filters: SearchFilters, limit: int
+    db: AsyncSession,
+    workspace_id: uuid.UUID,
+    query: str,
+    filters: SearchFilters,
+    limit: int,
+    *,
+    match_all: bool = False,
 ) -> list[Candidate]:
+    """match_all=False: any query term may match (OR). True: every term must match (AND)."""
     plain = func.plainto_tsquery("english", query)
-    tsq = func.to_tsquery("english", func.replace(cast(plain, Text), "&", "|"))
+    tsq = (
+        plain
+        if match_all
+        else func.to_tsquery("english", func.replace(cast(plain, Text), "&", "|"))
+    )
     rank = func.ts_rank_cd(DocumentChunk.tsv, tsq, 32).label("rank")  # 32: rank/(rank+1)
     q = (
         select(DocumentChunk, Document, rank)

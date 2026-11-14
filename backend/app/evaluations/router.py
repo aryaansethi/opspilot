@@ -12,7 +12,7 @@ from app.auth.deps import DB, Workspace
 from app.core.config import get_settings
 from app.core.errors import AppError, Forbidden, NotFound
 from app.documents import storage
-from app.evaluations.runner import DATASET_NAME, RETRIEVAL_CONFIGS, load_dataset
+from app.evaluations.runner import DATASET_NAME, RETRIEVAL_CONFIGS, available_versions, load_dataset
 from app.models import EvaluationResult, EvaluationRun
 from app.rag.reranking.reranker import rerank_available
 
@@ -83,9 +83,10 @@ async def start_run(body: RunRequest, db: DB, ctx: Workspace) -> RunOut:
     """Queue one configuration, or all four retrieval configurations when none is given (returns the first)."""
     if ctx.role != "owner":
         raise Forbidden("Only workspace owners can start evaluation runs")
-    ds = load_dataset()
-    if body.dataset_version and body.dataset_version != ds.version:
-        raise AppError(f"Only dataset {ds.version} is available")
+    versions = available_versions()
+    if body.dataset_version and body.dataset_version not in versions:
+        raise AppError(f"Unknown dataset version; available: {versions}")
+    ds = load_dataset(body.dataset_version)
     labels = [body.config_label] if body.config_label else list(RETRIEVAL_CONFIGS)
     if not rerank_available():
         rerank_labels = [label for label, cfg in RETRIEVAL_CONFIGS.items() if cfg.rerank]
@@ -125,6 +126,7 @@ async def start_run(body: RunRequest, db: DB, ctx: Workspace) -> RunOut:
                 "config_label": run.config_label,
                 "split": run.split,
                 "limit": body.limit,
+                "dataset_version": ds.version,
             },
         )
     return _out(runs[0])

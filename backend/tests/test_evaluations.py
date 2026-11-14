@@ -16,10 +16,31 @@ from tests.test_documents import ws_headers
 API = "/api/v1"
 
 
-def test_dataset_is_consistent() -> None:
-    ds = load_dataset()
+def test_dataset_v1_is_frozen() -> None:
+    ds = load_dataset("v1")
     assert len(ds.questions) == 100 and len(ds.corpus) == 24 and len(ds.hash) == 64
     assert sum(q["split"] == "test" for q in ds.questions) == 70
+
+
+def test_dataset_v2_validates() -> None:
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[2] / "evaluation" / "datasets" / "validate.py"
+    spec = importlib.util.spec_from_file_location("validate", path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.validate("v2") == []
+    ds = load_dataset("v2")
+    assert len(ds.questions) == 222 and len(ds.corpus) == 31
+    assert {q["kind"] for q in ds.questions} >= {
+        "lexical",
+        "semantic",
+        "multi",
+        "ambiguous",
+        "unanswerable",
+    }
     for q in ds.questions:
         assert q["answerable"] == bool(q["relevant"])
         for r in q["relevant"]:
@@ -28,8 +49,13 @@ def test_dataset_is_consistent() -> None:
 
 async def test_retrieval_run_records_metrics_and_results() -> None:
     async with get_sessionmaker()() as db:
+        v1 = load_dataset("v1")
         run = await run_retrieval(
-            db, RETRIEVAL_CONFIGS["A_lexical"], embedder=HashingEmbeddings(), split="test"
+            db,
+            RETRIEVAL_CONFIGS["A_lexical"],
+            embedder=HashingEmbeddings(),
+            split="test",
+            dataset=v1,
         )
         assert run.status == "completed", run.error
         m = run.metrics or {}
@@ -44,7 +70,11 @@ async def test_retrieval_run_records_metrics_and_results() -> None:
         )
         # second run reuses the indexed corpus (same hash) and is reproducible
         again = await run_retrieval(
-            db, RETRIEVAL_CONFIGS["A_lexical"], embedder=HashingEmbeddings(), split="test"
+            db,
+            RETRIEVAL_CONFIGS["A_lexical"],
+            embedder=HashingEmbeddings(),
+            split="test",
+            dataset=v1,
         )
         assert again.dataset_hash == run.dataset_hash
         assert {k: v for k, v in (again.metrics or {}).items() if "latency" not in k} == {
@@ -69,7 +99,13 @@ class AbstainingLLM:
 
 async def test_answer_run_measures_abstention_and_citations() -> None:
     async with get_sessionmaker()() as db:
-        run = await run_answers(db, embedder=HashingEmbeddings(), llm=AbstainingLLM(), split="all")
+        run = await run_answers(
+            db,
+            embedder=HashingEmbeddings(),
+            llm=AbstainingLLM(),
+            split="all",
+            dataset=load_dataset("v1"),
+        )
     assert run.status == "completed", run.error
     m = run.metrics or {}
     assert m["questions"] == 100 and m["model_errors"] == 0
@@ -101,17 +137,17 @@ async def test_api_queues_and_reports_runs(client: AsyncClient) -> None:
     assert (
         runs[0]["id"] == run_id
         and runs[0]["status"] == "completed"
-        and runs[0]["metrics"]["questions"] == 70
+        and runs[0]["metrics"]["questions"] == 155
     )
     detail = (await client.get(f"{API}/evaluations/runs/{run_id}", headers=h)).json()
-    assert len(detail["results"]) == 70 and {"hit_at_5", "reciprocal_rank", "latency_ms"} <= set(
+    assert len(detail["results"]) == 155 and {"hit_at_5", "reciprocal_rank", "latency_ms"} <= set(
         detail["results"][0]
     )
     all_four = await client.post(f"{API}/evaluations/run", headers=h, json={})
     assert all_four.status_code == 202
-    assert (
-        len(await storage.receive("opspilot-evaluate-test", wait_seconds=1, max_messages=10)) == 4
-    )
+    assert len(
+        await storage.receive("opspilot-evaluate-test", wait_seconds=1, max_messages=10)
+    ) == len(RETRIEVAL_CONFIGS)
 
 
 async def test_concurrent_workers_index_the_corpus_once() -> None:
@@ -135,7 +171,7 @@ async def test_concurrent_workers_index_the_corpus_once() -> None:
         n = await db.scalar(
             select(func.count()).select_from(Document).where(Document.workspace_id == a)
         )
-    assert n == 24
+    assert n == len(ds.corpus)
 
 
 async def test_duplicate_corpus_documents_are_removed() -> None:
@@ -166,7 +202,7 @@ async def test_duplicate_corpus_documents_are_removed() -> None:
         n = await db.scalar(
             select(func.count()).select_from(Document).where(Document.workspace_id == ws)
         )
-    assert n == 24
+    assert n == len(ds.corpus)
 
 
 class FailingEmbeddings(HashingEmbeddings):
@@ -236,4 +272,4 @@ async def test_rerank_config_is_skipped_or_refused_when_not_installed(
         json.loads(m["Body"])["config_label"]
         for m in await storage.receive("opspilot-evaluate-test", wait_seconds=1, max_messages=10)
     )
-    assert labels == ["A_lexical", "B_vector", "C_hybrid_rrf"]
+    assert labels == ["A_lexical", "B_vector", "C_hybrid_rrf", "E_hybrid_weighted"]

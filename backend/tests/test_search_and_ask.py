@@ -4,6 +4,7 @@ from typing import Any
 
 from httpx import AsyncClient
 
+from app.core.config import get_settings
 from app.rag.generation.grounded import build_user_prompt
 from app.rag.generation.llm import LLMError, parse_json_reply, set_llm
 from tests.conftest import register
@@ -73,7 +74,8 @@ async def test_hybrid_debug_exposes_ranks(client: AsyncClient) -> None:
     top = res["results"][0]
     assert "Redis eviction" in top["section_path"]
     assert top["debug"]["lexical_rank"] == 1 and top["debug"]["vector_rank"] is not None
-    assert abs(top["debug"]["rrf_score"] - (1 / 61 + 1 / (60 + top["debug"]["vector_rank"]))) < 1e-9
+    w = get_settings().fusion_lexical_weight  # product default: tuned weighted RRF
+    assert abs(top["debug"]["rrf_score"] - (w / 61 + 1 / (60 + top["debug"]["vector_rank"]))) < 1e-9
     assert set(res["timings_ms"]) >= {"lexical", "embed_query", "vector"}
     plain = await search(client, u, query="redis")
     assert plain["results"][0]["debug"] is None and plain["timings_ms"] is None
