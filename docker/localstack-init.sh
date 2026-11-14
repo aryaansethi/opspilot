@@ -13,3 +13,5 @@ INV_DLQ_ARN=$(awslocal sqs get-queue-attributes --queue-url http://localhost:456
 awslocal sqs create-queue --queue-name opspilot-investigate \
   --attributes "{\"VisibilityTimeout\":\"600\",\"RedrivePolicy\":\"{\\\"deadLetterTargetArn\\\":\\\"$INV_DLQ_ARN\\\",\\\"maxReceiveCount\\\":\\\"2\\\"}\"}" >/dev/null
 echo "opspilot investigate queue ready"
+awslocal sqs create-queue --queue-name opspilot-evaluate --attributes '{"VisibilityTimeout":"7200"}' >/dev/null
+echo "opspilot evaluate queue ready"

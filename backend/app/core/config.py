@@ -61,9 +61,15 @@ class Settings(BaseSettings):
 
     # --- investigations ---
     sqs_investigate_queue: str = "opspilot-investigate"
+    sqs_evaluate_queue: str = "opspilot-evaluate"
     investigation_timeout_seconds: int = 420
     investigation_max_tool_calls: int = 12
     investigation_max_window_hours: int = 24
+
+    # --- evaluation ---
+    evaluation_dataset_dir: str = str(
+        __import__("pathlib").Path(__file__).resolve().parents[3] / "evaluation" / "datasets" / "v1"
+    )
 
     # --- retrieval ---
     chunk_target_tokens: int = 500

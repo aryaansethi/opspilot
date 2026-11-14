@@ -1,0 +1,61 @@
+{
+  "environment": {
+    "python": "3.12.13",
+    "machine": "arm64",
+    "system": "Darwin",
+    "embedding_model": "bge-m3",
+    "llm_model": "opspilot-qwen3-8b",
+    "generated_at": "2026-11-14T06:17:11.702149+00:00"
+  },
+  "runs": [
+    {
+      "id": "5f743f79-c55c-4fa8-a475-53f827c11be4",
+      "config_label": "C_hybrid_rrf",
+      "config": {
+        "mode": "hybrid",
+        "rerank": false,
+        "lexical": "postgres_fts_ts_rank_cd",
+        "embedding_model": "bge-m3",
+        "reranker": null,
+        "rrf_k": 30,
+        "candidates": 50,
+        "rerank_candidates": null,
+        "top_k": 10,
+        "chunk_target_tokens": 500,
+        "chunk_overlap_tokens": 80
+      },
+      "status": "completed",
+      "metrics": {
+        "recall_at_5": 0.9792,
+        "recall_at_10": 1.0,
+        "precision_at_5": 0.2417,
+        "mrr": 0.8646,
+        "ndcg_at_5": 0.8943,
+        "ndcg_at_10": 0.902,
+        "latency_p50_ms": 141.9,
+        "latency_p95_ms": 156.7,
+        "questions": 30,
+        "answerable_questions": 24,
+        "by_kind": {
+          "lexical": {
+            "n": 9,
+            "recall_at_5": 1.0,
+            "mrr": 1.0
+          },
+          "semantic": {
+            "n": 13,
+            "recall_at_5": 0.9615,
+            "mrr": 0.7885
+          },
+          "multi": {
+            "n": 2,
+            "recall_at_5": 1.0,
+            "mrr": 0.75
+          }
+        }
+      },
+      "dataset_hash": "c2159c5635cdd6784599a95881b80663f6d17fe05f5037e3a75a2a96d2951562",
+      "split": "tune"
+    }
+  ]
+}

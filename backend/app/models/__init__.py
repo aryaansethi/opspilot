@@ -1,6 +1,7 @@
 """Import every model so Alembic autogenerate and relationship resolution see them."""
 
 from app.models.documents import Document, DocumentChunk, DocumentIngestionJob
+from app.models.evaluations import EvaluationResult, EvaluationRun
 from app.models.identity import AuditEvent, RefreshToken, User, Workspace, WorkspaceMember
 from app.models.investigations import (
     ActionApproval,
@@ -18,6 +19,8 @@ from app.models.tools import (
 )
 
 __all__ = [
+    "EvaluationResult",
+    "EvaluationRun",
     "ActionApproval",
     "EvidenceItem",
     "Hypothesis",

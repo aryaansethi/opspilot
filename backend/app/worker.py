@@ -18,6 +18,7 @@ from app.core.logging import configure_logging, log
 from app.db.session import dispose_engine, get_sessionmaker
 from app.documents import storage
 from app.documents.ingestion import ingest_document
+from app.evaluations.runner import RETRIEVAL_CONFIGS, run_answers, run_retrieval
 from app.investigations.engine import run_investigation
 from app.rag.embeddings.provider import get_embedding_provider
 from app.rag.generation.llm import get_llm
@@ -41,6 +42,31 @@ async def handle_investigation(body: dict[str, Any]) -> None:
             llm=get_llm(),
             embedder=get_embedding_provider(),
         )
+
+
+async def handle_evaluation(body: dict[str, Any]) -> None:
+    run_id = uuid.UUID(str(body["run_id"]))
+    label = str(body["config_label"])
+    split = str(body.get("split", "test"))
+    async with get_sessionmaker()() as db:
+        if label in RETRIEVAL_CONFIGS:
+            await run_retrieval(
+                db,
+                RETRIEVAL_CONFIGS[label],
+                embedder=get_embedding_provider(),
+                split=split,
+                run_id=run_id,
+            )
+        else:
+            limit = body.get("limit")
+            await run_answers(
+                db,
+                embedder=get_embedding_provider(),
+                llm=get_llm(),
+                split=split,
+                run_id=run_id,
+                limit=int(limit) if limit else None,
+            )
 
 
 async def consume(
@@ -72,6 +98,7 @@ async def run(stop: asyncio.Event) -> None:
     await asyncio.gather(
         consume(s.sqs_ingest_queue, handle_ingest, stop),
         consume(s.sqs_investigate_queue, handle_investigation, stop),
+        consume(s.sqs_evaluate_queue, handle_evaluation, stop),
     )
     await dispose_engine()
     log.info("worker.stopped")

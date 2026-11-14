@@ -10,6 +10,7 @@ os.environ["DATABASE_URL"] = "postgresql+asyncpg://opspilot:opspilot@localhost:5
 os.environ["ENVIRONMENT"] = "test"
 os.environ["SQS_INGEST_QUEUE"] = "opspilot-ingest-test"
 os.environ["SQS_INVESTIGATE_QUEUE"] = "opspilot-investigate-test"
+os.environ["SQS_EVALUATE_QUEUE"] = "opspilot-evaluate-test"
 os.environ["S3_DOCUMENTS_BUCKET"] = "opspilot-documents-test"
 
 from collections.abc import AsyncIterator  # noqa: E402
@@ -40,7 +41,7 @@ def _aws_resources() -> None:
     from app.documents import storage
 
     storage.s3().create_bucket(Bucket="opspilot-documents-test")
-    for name in ("opspilot-ingest-test", "opspilot-investigate-test"):
+    for name in ("opspilot-ingest-test", "opspilot-investigate-test", "opspilot-evaluate-test"):
         url = storage.sqs().create_queue(QueueName=name)["QueueUrl"]
         storage.sqs().purge_queue(QueueUrl=url)
 

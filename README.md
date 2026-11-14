@@ -12,11 +12,11 @@ Runs **entirely locally at zero cost**: Docker Compose (Postgres + pgvector, Loc
 | 2. Document ingestion (S3 → SQS → worker) | Done, tested |
 | 3. Hybrid search + grounded Q&A | Done, tested |
 | 4. MCP: CloudWatch server + backend MCP layer | Done, tested |
-| 4b. MCP: GitHub server | Done, tested with a simulated GitHub API; live check pending token |
+| 4b. MCP: GitHub server | Done, tested; live check against a real repository passed |
 | 5. Investigation workflow (state machine, SSE, approvals, audit) | Done, tested; live run on local model |
-| 6. Evaluation | Planned |
-| 7. Terraform / CI | Planned |
-| Frontend (Next.js) | In progress in `frontend/` |
+| 6. Evaluation (dataset v1, retrieval A–D, answer checks, dashboard) | Retrieval done and reported; answer-quality run in progress |
+| 7. CI, containers, Terraform | In progress |
+| Frontend (Next.js) | Done: all screens on the real API (mock mode for previews) |
 
 ## Prerequisites
 
@@ -68,6 +68,23 @@ uv run ruff check . && uv run mypy app
 ```
 
 Tests use deterministic fake embeddings and a scripted fake LLM, so they do not need Ollama.
+
+## Evaluation results (dataset v1, held-out test split)
+
+Retrieval over 70 held-out questions (56 answerable), measured by `evaluation/run.py` on 2026-11-14
+([report](evaluation/reports/20261114-061751-retrieval-test.md), [method](evaluation/README.md)):
+
+| Config | Recall@5 | MRR | nDCG@10 | p50 latency |
+|---|---|---|---|---|
+| A: Postgres full-text (not BM25) | 0.786 | 0.692 | 0.713 | 4 ms |
+| B: vector (bge-m3) | 0.920 | 0.862 | 0.880 | 135 ms |
+| C: hybrid, RRF k=60 | 0.893 | 0.779 | 0.805 | 142 ms |
+| D: hybrid + cross-encoder rerank | 0.911 | 0.903 | 0.901 | 457 ms |
+
+What this shows: reranking gives the best ranking quality; plain equal-weight RRF is *worse* than
+vector-only here because the lexical side is weak on paraphrased and multi-section questions. RRF k
+(10–100) made no measurable difference on the tuning split. The corpus is small and synthetic, so
+treat these as a comparison between configurations, not as production accuracy.
 
 ## Honest notes
 
