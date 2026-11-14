@@ -145,7 +145,7 @@ ollama pull qwen3:8b
 ollama create opspilot-qwen3-8b -f docker/ollama/Modelfile   # same model, 16K context
 
 # 2. everything else: Postgres, LocalStack, API, worker, both MCP servers, frontend, demo seed
-docker compose --profile app up -d --build
+docker compose --profile app up -d --build      # or: make demo
 
 # 3. watch the one-off seed finish (demo account, 24 documents, synthetic CloudWatch incident)
 docker compose --profile app logs -f seed
@@ -156,7 +156,7 @@ Open **http://localhost:3000** and sign in with **`demo@opspilot.dev` / `opspilo
 `/docs`).
 
 The synthetic incident is written relative to "now" (a deploy 60 minutes ago), so re-seed before a
-demo: `docker compose --profile app run --rm seed`. Stop with `docker compose --profile app down`
+demo: `make seed` (or `docker compose --profile app run --rm seed`). Stop with `docker compose --profile app down`
 (add `-v` to delete the data).
 
 ### Developing without containers
@@ -186,7 +186,7 @@ default. Nothing needs a real cloud account.
 
 | Integration | Without credentials (default) | With credentials |
 |---|---|---|
-| **CloudWatch** | Reads the **synthetic** incident the seed writes into LocalStack. | Point only the CloudWatch server at real AWS: `CW_AWS_ENDPOINT_URL=` (empty), `CW_AWS_REGION`, and `CW_AWS_PROFILE` (a read-only profile) or the standard credential chain; S3/SQS stay on LocalStack. Restrict with `CW_ALLOWED_LOG_GROUPS` / `CW_ALLOWED_NAMESPACES`. The LocalStack dummy keys are never sent to AWS. |
+| **CloudWatch** | Reads the **synthetic** incident the seed writes into LocalStack. | Point only the CloudWatch server at real AWS: `CW_AWS_ENDPOINT_URL=` (empty), `CW_AWS_REGION`, and `CW_AWS_PROFILE` (a read-only profile) or the standard credential chain; S3/SQS stay on LocalStack. Restrict with `CW_ALLOWED_LOG_GROUPS` / `CW_ALLOWED_NAMESPACES`. The LocalStack dummy keys are never sent to AWS. In Compose, export these before `up`; for a profile, add a `docker-compose.override.yml` that mounts `~/.aws:/home/opspilot/.aws:ro` on `mcp-cloudwatch`. |
 | **GitHub** | The server starts and every tool answers "GitHub is not configured"; investigations finish **PARTIAL** and the report says recent code changes weren't checked. | Put `GITHUB_TOKEN` (fine-grained, read-only) and `GITHUB_ALLOWED_REPOS=owner/name` in `backend/.env`; only `mcp-github` reads that file. Connect it on the Integrations page, or re-run the seed with `GITHUB_ALLOWED_REPOS` set. |
 | **Jira** | Approval flow works; execution reports "tool not registered". | Not implemented yet (no Jira MCP server). |
 | **LLM** | Ollama on the host. | Any OpenAI-compatible endpoint: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `EMBEDDING_MODEL`, `EMBEDDING_DIM`. |

@@ -73,8 +73,13 @@ services:
     environment:
       <<: *app-env
       MCP_PORT: "8101"
-      CW_ALLOWED_LOG_GROUPS: /ecs/orders-api
-      CW_ALLOWED_NAMESPACES: OpsPilot/OrdersApi
+      CW_ALLOWED_LOG_GROUPS: ${CW_ALLOWED_LOG_GROUPS:-/ecs/orders-api}
+      CW_ALLOWED_NAMESPACES: ${CW_ALLOWED_NAMESPACES:-OpsPilot/OrdersApi}
+      # Real CloudWatch (optional): export CW_AWS_ENDPOINT_URL= (set but EMPTY) before `up`.
+      # Unset keeps LocalStack. For a named profile, also mount ~/.aws read-only (see README).
+      CW_AWS_ENDPOINT_URL: ${CW_AWS_ENDPOINT_URL-http://localstack:4566}
+      CW_AWS_REGION: ${CW_AWS_REGION:-}
+      CW_AWS_PROFILE: ${CW_AWS_PROFILE:-}
     command: ["python", "-m", "mcp_servers.cloudwatch.server"]
     healthcheck: {disable: true}
     depends_on: [api]
