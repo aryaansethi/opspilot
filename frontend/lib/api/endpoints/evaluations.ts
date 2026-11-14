@@ -3,6 +3,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { api } from "@/lib/api"
 import { useWorkspaceId } from "@/lib/auth/auth-provider"
+import type { RunEvaluationRequest } from "@/lib/types/api"
 import { qk } from "./keys"
 
 export function useEvaluationRuns() {
@@ -17,14 +18,20 @@ export function useEvaluationRuns() {
 
 export function useEvaluationRun(id: string) {
   const ws = useWorkspaceId()
-  return useQuery({ queryKey: qk.evalRun(ws, id), queryFn: () => api.evaluations.get(id), enabled: !!ws })
+  return useQuery({
+    queryKey: qk.evalRun(ws, id),
+    queryFn: () => api.evaluations.get(id),
+    enabled: !!ws,
+    // Answers runs take ~1 min per question; keep per-question results flowing in.
+    refetchInterval: (q) => (q.state.data?.status === "running" ? 5000 : false),
+  })
 }
 
 export function useRunEvaluation() {
   const qc = useQueryClient()
   const ws = useWorkspaceId()
   return useMutation({
-    mutationFn: (input: { dataset_version?: string; config_label?: string }) => api.evaluations.run(input),
+    mutationFn: (input: RunEvaluationRequest) => api.evaluations.run(input),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.evalRuns(ws) }),
   })
 }

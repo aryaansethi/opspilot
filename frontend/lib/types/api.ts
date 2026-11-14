@@ -326,17 +326,36 @@ export interface AuditFilters {
   cursor?: string
 }
 
+export type EvaluationKind = "retrieval" | "answers"
+export type EvaluationSplit = "test" | "tune" | "all"
+export type QuestionKind = "lexical" | "semantic" | "multi" | "unanswerable"
+
+export interface KindBreakdown {
+  n: number
+  recall_at_5: number
+  mrr: number
+}
+
+/** Retrieval runs fill the ranking metrics; answers runs fill the answer metrics. Faithfulness isn't measured. */
 export interface EvaluationMetrics {
+  // retrieval
   recall_at_5?: number
   recall_at_10?: number
   precision_at_5?: number
   mrr?: number
   ndcg_at_5?: number
   ndcg_at_10?: number
-  faithfulness?: number
-  citation_precision?: number
+  answerable_questions?: number
+  by_kind?: Partial<Record<"lexical" | "semantic" | "multi", KindBreakdown>>
+  // answers
   abstention_accuracy?: number
-  tool_success_rate?: number
+  unanswerable_abstention_rate?: number
+  citation_precision?: number
+  citation_coverage?: number
+  expected_fact_match?: number
+  model_errors?: number
+  // both
+  questions?: number
   latency_p50_ms?: number
   latency_p95_ms?: number
 }
@@ -345,25 +364,41 @@ export interface EvaluationRun {
   id: UUID
   dataset_name: string
   dataset_version: string
+  dataset_hash?: string
+  kind?: EvaluationKind
   config_label: string
   config: Record<string, unknown>
+  split?: EvaluationSplit
   status: "running" | "completed" | "failed"
   started_at: ISODate
-  finished_at?: ISODate
-  metrics?: EvaluationMetrics
+  finished_at?: ISODate | null
+  metrics?: EvaluationMetrics | null
+  error?: string | null
 }
 
 export interface EvaluationQuestionResult {
-  question_id: UUID
+  /** Dataset question id, e.g. "q012". */
+  question_id: string
   question: string
+  kind?: QuestionKind
   answerable: boolean
   hit_at_5: boolean
   reciprocal_rank: number
   latency_ms: number
+  detail?: Record<string, unknown>
 }
 
 export interface EvaluationRunDetail extends EvaluationRun {
   results: EvaluationQuestionResult[]
+}
+
+export interface RunEvaluationRequest {
+  dataset_version?: string
+  /** Omit to queue all four retrieval configs. */
+  config_label?: string
+  split?: EvaluationSplit
+  /** Answers runs only: cap the number of questions. */
+  limit?: number
 }
 
 export interface FeedbackRequest {

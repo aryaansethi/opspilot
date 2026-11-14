@@ -608,6 +608,8 @@ export const mockApi: ApiContract = {
         dataset_name: template.dataset_name,
         dataset_version: input.dataset_version ?? template.dataset_version,
         config_label: input.config_label ?? template.config_label,
+        kind: input.config_label?.startsWith("answers") ? "answers" : "retrieval",
+        split: input.split ?? "test",
         config: template.config,
         status: "running",
         started_at: new Date().toISOString(),
@@ -637,8 +639,9 @@ export const mockApi: ApiContract = {
       return {
         ...clone(run),
         results: qs.map((q, i) => ({
-          question_id: `q-${i}`,
+          question_id: `q00${i + 1}`,
           question: q,
+          kind: i === 4 ? ("unanswerable" as const) : i === 1 ? ("lexical" as const) : ("semantic" as const),
           answerable: i !== 4,
           hit_at_5: i !== 4 && i !== 3,
           reciprocal_rank: i === 4 ? 0 : 1 / (1 + (i % 3)),

@@ -13,6 +13,7 @@ import type {
   DocumentStatus,
   DocStatus,
   EvaluationRun,
+  RunEvaluationRequest,
   EvaluationRunDetail,
   Evidence,
   FeedbackRequest,
@@ -115,7 +116,7 @@ export interface ApiContract {
     list(filters?: AuditFilters): Promise<Page<AuditEvent>>
   }
   evaluations: {
-    run(input: { dataset_version?: string; config_label?: string }): Promise<EvaluationRun>
+    run(input: RunEvaluationRequest): Promise<EvaluationRun>
     runs(): Promise<EvaluationRun[]>
     get(id: UUID): Promise<EvaluationRunDetail>
   }
