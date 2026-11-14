@@ -1,77 +1,267 @@
 # OpsPilot AI
 
-**An incident-investigation assistant for engineering teams.** Describe what's wrong; OpsPilot searches
-your runbooks and past incidents with hybrid retrieval, gathers live evidence from GitHub and CloudWatch
-through read-only MCP tool servers, and writes a report that separates observed facts from hypotheses,
-cites every claim, and says what it couldn't find. Write actions (like opening a Jira ticket) only run
-after a human approves the exact arguments.
+**An AI incident-investigation assistant that grounds every conclusion in evidence: your runbooks,
+past incidents, live logs, metrics and code changes.**
 
-Runs **entirely on your machine at zero cost**: Docker Compose (Postgres + pgvector, LocalStack for
-S3/SQS/CloudWatch), Ollama for the models. No cloud account is needed; the Terraform in
-`infrastructure/` is a validated, never-applied example.
+When production degrades, the evidence is scattered across runbooks, postmortems, CloudWatch and Git
+history. OpsPilot takes a plain-language incident description, retrieves the relevant documentation
+with hybrid search, gathers live evidence through read-only MCP tool servers, and produces a report
+that separates observed facts from hypotheses, cites every claim, and states what it could not verify.
+
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![FastAPI](https://img.shields.io/badge/FastAPI-009688?logo=fastapi&logoColor=white)
+![Next.js](https://img.shields.io/badge/Next.js-15-000000?logo=nextdotjs&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20%2B%20pgvector-4169E1?logo=postgresql&logoColor=white)
+![MCP](https://img.shields.io/badge/MCP-Python%20SDK-6E56CF)
+![Ollama](https://img.shields.io/badge/LLM-Ollama%20(local)-000000?logo=ollama&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker%20Compose-2496ED?logo=docker&logoColor=white)
+![Terraform](https://img.shields.io/badge/Terraform-validated%2C%20not%20applied-7B42BC?logo=terraform&logoColor=white)
+
+**Runs entirely on your machine with no cloud account and no paid services.**
+
+[Architecture](#architecture) · [Evaluation](#rag-evaluation-and-benchmarks) ·
+[Run it locally](#local-installation-and-setup) · [Demo script](docs/DEMO.md) ·
+[Design document](ARCHITECTURE.md) · [Security review](backend/SECURITY.md)
 
 ![Investigation with live CloudWatch evidence](docs/screenshots/07-investigation-evidence.png)
 
-- [What it does](#what-it-does) · [Architecture](#architecture) · [Tech stack](#tech-stack-and-why) ·
-  [Quick start](#quick-start-docker-compose) · [Configuration](#configuration) ·
-  [Evaluation](#evaluation-results-dataset-v1-held-out-test-split) · [Screenshots](#screenshots) ·
-  [Demo script](docs/DEMO.md)
+---
 
-## What it does
+## Project overview
 
-| Capability | How |
-|---|---|
-| **Knowledge base** | Upload PDF/Markdown/TXT runbooks and postmortems. Files go to S3 through presigned URLs; an SQS worker parses, chunks by heading, embeds with `bge-m3` and indexes into pgvector + Postgres full-text. |
-| **Hybrid search** | Full-text and vector search fused with Reciprocal Rank Fusion, optional cross-encoder reranking. A debug view shows every result's lexical rank, vector rank and fused score. |
-| **Grounded answers** | The model may only cite retrieved chunks; invalid citations are removed, and it abstains ("insufficient evidence") instead of guessing. |
-| **Investigations** | A bounded state machine: classify → collect parameters (asks if service or time range is missing) → plan → retrieve → call read-only tools → normalise evidence → hypotheses → citation and number checks → report. Progress streams live over SSE. |
-| **Live evidence via MCP** | CloudWatch (logs, metrics, alarms) and GitHub (commits, PRs, code search) run as separate MCP servers with allowlists, timeouts and output caps. Each holds its own credentials. |
-| **Human-approved actions** | Write tools are never called by the workflow. A request shows the exact arguments and runs only after approval; every decision is audited. |
-| **Audit log** | Tool calls, approvals, uploads, integration changes and investigations, filterable by actor, action and time. |
-| **Measured quality** | A versioned dataset with a held-out test split compares four retrieval strategies and grades answers (abstention, citation precision/coverage). Results are browsable per question in the app. |
+An engineer describes an incident in plain language, for example:
+
+- *"orders-api p95 latency jumped right after the latest deploy. What changed?"* (API latency spike)
+- *"The HTTP 5xx rate for orders-api is elevated."* (HTTP 500 errors)
+- *"orders-api is logging `ERR_POOL_TIMEOUT`."* (database connection failure)
+- *"The catalog deployment never finished and tasks keep exiting."* (failed deployment)
+
+OpsPilot then combines two kinds of evidence:
+
+| Source | What it provides | How |
+|---|---|---|
+| **Documentation** | Runbooks, architecture notes, error-code references, past incident reports | Hybrid retrieval over an indexed knowledge base |
+| **Live systems** | CloudWatch logs, metrics and alarms; recent GitHub commits and diffs | Read-only MCP tool servers with allowlists |
+
+The result is a structured report: observed facts with citations, ranked hypotheses with supporting and
+contradicting evidence, recommended diagnostics, proposed remediation, and an explicit list of unknowns.
+OpsPilot is an **investigation assistant**, not an autonomous operator: it never changes infrastructure,
+and write actions need human approval.
+
+## Key features
+
+- **Hybrid retrieval.** PostgreSQL full-text search (`ts_rank_cd`; *not* BM25) and pgvector cosine
+  search over `bge-m3` embeddings, fused with **Reciprocal Rank Fusion**.
+- **Cross-encoder reranking.** `BAAI/bge-reranker-base` reorders the top 30 candidates. It is on
+  automatically when installed, because it was the best configuration on every evaluation split.
+- **Grounded answers.** The model may only cite retrieved chunks; invalid citations are removed, and it
+  abstains ("insufficient evidence") instead of guessing.
+- **MCP integrations.** Two separate read-only MCP servers: **AWS CloudWatch** (logs, metrics, alarms,
+  alarm history) and **GitHub** (commits, commit diffs, pull requests, code search), each holding its own
+  credentials.
+- **Bounded investigation workflow.** An explicit state machine, not an open-ended agent loop. It asks for
+  missing scope, makes at most 2 LLM calls and 12 tool calls, enforces a wall-clock timeout, and streams
+  progress over Server-Sent Events.
+- **Evidence-backed hypotheses and reports.** Hypotheses cite evidence labels. A hypothesis is only marked
+  *supported* when live evidence backs it. Statements with numbers that don't appear in the cited
+  evidence are removed and listed in the report.
+- **Human approval for write actions.** A write tool shows its exact arguments and runs only after
+  approval. There is no Jira server yet, so an approved ticket honestly reports "not executed".
+- **Audit logging.** Every tool call (with redacted arguments), approval, upload, integration change and
+  investigation is recorded and filterable.
+- **Evaluation and benchmarking.** A versioned, validated dataset (222 questions) with a held-out test
+  split, six retrieval strategies, answer checks with an LLM faithfulness judge, plus tool-selection and
+  prompt-injection tests. Results are browsable per question in the app.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  subgraph Browser
-    UI["Next.js 15 app<br/>TanStack Query · SSE client"]
+  U([Engineer]) --> FE["Next.js / React frontend<br/>TanStack Query · SSE client"]
+  FE -- "REST + SSE<br/>JWT + refresh cookie" --> API["FastAPI backend<br/>auth · workspaces · search · ask<br/>investigations · approvals · audit"]
+  API -- "queue (SQS)" --> W["Worker<br/>ingestion · investigations · evaluations"]
+
+  subgraph WF["Investigation workflow (bounded state machine)"]
+    direction TB
+    RAG["RAG retrieval<br/>runbooks · past incidents"]
+    MCP["MCP integrations<br/>read-only tools"]
+    COR["Evidence correlation<br/>labelled, normalised evidence"]
+    REP["AI report<br/>facts · hypotheses · recommendations"]
+    RAG --> COR
+    MCP --> COR
+    COR --> REP
   end
 
-  subgraph Backend["Backend (one Python image, four processes)"]
-    API["api — FastAPI<br/>auth · workspaces · documents<br/>search/ask · investigations<br/>approvals · audit · evaluations"]
-    W["worker<br/>ingestion · investigation runs<br/>evaluation runs"]
-    MCW["mcp-cloudwatch<br/>read-only MCP server"]
-    MGH["mcp-github<br/>read-only MCP server<br/>(only process with GITHUB_TOKEN)"]
+  W --> WF
+  RAG --> DB
+  MCP --> CWS["CloudWatch MCP server"] --> CW[("CloudWatch<br/>LocalStack by default")]
+  MCP --> GHS["GitHub MCP server"] --> GH[("GitHub API<br/>optional token")]
+  REP --> LLM["LLM via Ollama<br/>opspilot-qwen3-8b"]
+
+  subgraph Data["Storage"]
+    DB[("PostgreSQL 16<br/>pgvector + full-text<br/>state · evidence · audit")]
+    S3[("S3 (LocalStack)<br/>uploaded documents")]
   end
 
-  subgraph Data["Local infrastructure (Docker Compose)"]
-    PG[("Postgres 16<br/>+ pgvector + FTS")]
-    S3[("LocalStack S3<br/>documents")]
-    Q[["LocalStack SQS<br/>ingest · investigate · evaluate"]]
-    CW[("LocalStack CloudWatch<br/>synthetic incident")]
-  end
-
-  LLM["Ollama on the host<br/>qwen3 8B · bge-m3"]
-  GH["GitHub API<br/>(optional, token)"]
-
-  UI -- "JSON + SSE, Bearer token,<br/>httpOnly refresh cookie" --> API
-  UI -- "presigned PUT" --> S3
-  API --> PG
-  API -- enqueue --> Q
-  Q --> W
-  W --> PG
-  W --> S3
-  API -- "MCP (streamable HTTP)" --> MCW
-  W -- "MCP (streamable HTTP)" --> MCW
-  W -- "MCP" --> MGH
-  MCW --> CW
-  MGH --> GH
-  API --> LLM
-  W --> LLM
+  FE -- "presigned upload" --> S3
+  S3 --> ING["Ingestion: parse → chunk →<br/>embed with bge-m3"] --> DB
+  API --> DB
+  EV["Evaluation pipeline<br/>datasets · metrics · reports"] --> DB
 ```
 
-### Investigation workflow
+**Process layout.** One Python image runs four processes: `api`, `worker`, `mcp-cloudwatch` and
+`mcp-github`. Postgres, LocalStack (S3, SQS, CloudWatch) and the frontend run as containers. Ollama runs
+on the host to use the GPU. Only the GitHub MCP process can read the GitHub token.
+
+### RAG retrieval pipeline
+
+```mermaid
+flowchart LR
+  D[Documents] --> C["Structure-aware chunking<br/>by heading; code and log blocks kept whole"]
+  C --> E["Embeddings<br/>bge-m3, 1024-d"]
+  C --> K["Keyword index<br/>Postgres tsvector"]
+  Q[Question] --> VR["Vector retrieval<br/>pgvector cosine, top 50"]
+  Q --> KR["Keyword retrieval<br/>ts_rank_cd"]
+  E --> VR
+  K --> KR
+  VR --> F["Reciprocal Rank Fusion"]
+  KR --> F
+  F --> R["Cross-encoder reranking<br/>bge-reranker-base, top 30"]
+  R --> X["Context: labelled,<br/>sanitised evidence"]
+  X --> L[LLM]
+  L --> A["Cited answer<br/>invalid citations removed;<br/>abstains when evidence is thin"]
+```
+
+The product default fuses the keyword list at half weight and uses only its top 10 results. This is
+configuration E below, tuned on the tuning split. Equal-weight RRF (C) and the other strategies remain
+available for fair benchmarking.
+
+More detail: [ARCHITECTURE.md](ARCHITECTURE.md) (design and decision log) ·
+[evaluation/README.md](evaluation/README.md) · [frontend/README.md](frontend/README.md) ·
+[infrastructure/README.md](infrastructure/README.md).
+
+## Technology stack
+
+| Area | Technologies | Why |
+|---|---|---|
+| **Frontend** | Next.js 15 (App Router), React 19, TypeScript, Tailwind CSS v4, shadcn/ui, TanStack Query, Recharts, Vitest | Typed API client with a mock mode for previews; SSE over `fetch` so the auth header can be sent; charts for the evaluation dashboard. |
+| **Backend** | Python 3.12, FastAPI, Pydantic v2, SQLAlchemy 2 (async), Alembic, structlog | Typed request/response models and OpenAPI; async I/O for streaming and tool calls; versioned migrations. |
+| **AI and RAG** | Ollama (`opspilot-qwen3-8b`: qwen3 8B with a 16K context), `bge-m3` embeddings, `bge-reranker-base` (sentence-transformers), RRF | Free and local. Any OpenAI-compatible endpoint works by changing env vars. Reranking is optional and measured. |
+| **Integrations** | Official MCP Python SDK (streamable HTTP), boto3, httpx | Tool servers are isolated processes with their own credentials; the backend adds a registry, schema validation, allowlists, timeouts and output caps. |
+| **Database** | PostgreSQL 16 + pgvector (HNSW) + built-in full-text search | One database for documents, vectors, workflow state, evidence and audit; LISTEN/NOTIFY drives live updates (no Redis). |
+| **Infrastructure and DevOps** | Docker, Docker Compose, LocalStack (S3, SQS, CloudWatch), GitHub Actions, Terraform | Compose is the supported way to run it. CI runs lint, types, tests and builds. Terraform describes an AWS deployment and is validated, never applied. |
+
+## Screenshots
+
+All screenshots are from the real application running locally on the demo seed. The CloudWatch data
+in them is synthetic.
+
+| | |
+|---|---|
+| ![Dashboard](docs/screenshots/02-dashboard.png)<br/>**Dashboard** | ![Knowledge base](docs/screenshots/03-knowledge-base.png)<br/>**Knowledge base** |
+| ![Hybrid search with rank debug](docs/screenshots/05-hybrid-search-debug.png)<br/>**Hybrid search** with each result's lexical rank, vector rank and fused score | ![Grounded answer](docs/screenshots/06-grounded-answer.png)<br/>**Ask**: grounded answer with citations |
+| ![Investigation evidence](docs/screenshots/07-investigation-evidence.png)<br/>**Investigation workflow**: progress, live activity, evidence by source | ![Hypotheses](docs/screenshots/08-investigation-hypotheses.png)<br/>**Hypotheses** with supporting and contradicting evidence |
+| ![Report](docs/screenshots/09-report.png)<br/>**Investigation report** | ![Approval](docs/screenshots/10-approval.png)<br/>**Write action** awaiting human approval |
+| ![Integrations](docs/screenshots/12-integrations.png)<br/>**Integrations**: MCP tools with per-workspace switches | ![Evaluations](docs/screenshots/13-evaluations.png)<br/>**Evaluation dashboard** (dataset v1 run shown) |
+| ![Audit log](docs/screenshots/16-audit-log.png)<br/>**Audit log** | ![Evaluation drill-down](docs/screenshots/14-evaluation-run.png)<br/>**Per-question** evaluation drill-down |
+
+## RAG evaluation and benchmarks
+
+**Method.** Dataset v2 has 31 synthetic documents and 222 hand-written questions:
+- 61 lexical (exact error codes);
+- 94 semantic (paraphrased symptoms);
+- 20 multi-section;
+- 12 ambiguous;
+- 35 unanswerable.
+
+Questions are split 67 for **tuning** and 155 held out for **testing**; settings were chosen on the tuning
+split only. A validator checks that every expected section exists and every expected fact appears in it
+word for word. Relevance is judged per document section; unanswerable questions are excluded from
+retrieval metrics. Every run stores the dataset hash, its configuration and per-question results, and
+rankings break ties by content, so a fresh database reproduces the same numbers.
+
+**Retrieval, dataset v2, held-out test split** (130 answerable questions; measured 2026-11-14, report
+[`20261114-181242-retrieval-test.md`](evaluation/reports/20261114-181242-retrieval-test.md)):
+
+| Strategy | Recall@5 | Recall@10 | MRR | nDCG@10 | p50 latency |
+|---|---|---|---|---|---|
+| A · Keyword (Postgres full-text) | 0.827 | 0.919 | 0.693 | 0.730 | 5 ms |
+| B · Vector (bge-m3) | 0.942 | 0.969 | 0.838 | 0.868 | 158 ms |
+| C · Hybrid (equal-weight RRF) | 0.896 | 0.977 | 0.824 | 0.851 | 165 ms |
+| E · Hybrid (weighted RRF, tuned) | 0.904 | 0.931 | 0.825 | 0.846 | 173 ms |
+| D · Hybrid (RRF) + reranking | **0.950** | **0.981** | **0.909** | **0.918** | 519 ms |
+| F · Weighted hybrid + reranking | **0.950** | **0.981** | **0.909** | **0.918** | 516 ms |
+
+What the results show:
+- **Vector search has the best Recall@5 of the strategies without reranking.** Plain hybrid retrieval does
+  **not** beat it: the keyword list is long and noisy (about 30 of 50 candidates match some word of a
+  natural-language question), and equal-weight fusion lets that noise push correct vector results down.
+- **A tuned weighted fusion (E) improved the tuning split but did not generalize** to the held-out test
+  (MRR 0.825 vs 0.824). It is reported here rather than re-tuned on the test set.
+- **Hybrid + reranking gives the best Recall@5, MRR and nDCG@10.** It was the best configuration on every
+  split of both datasets. The cost is about 350 ms of extra latency per query (measured on an Apple Silicon
+  laptop), which is small next to LLM generation.
+- **These numbers compare strategies on a small synthetic corpus.** They do not demonstrate
+  production-level accuracy.
+
+**Investigation behaviour** (local model; report
+[`20261114-182513-extra-test.md`](evaluation/reports/20261114-182513-extra-test.md)):
+
+| Check | Result | Notes |
+|---|---|---|
+| Tool-selection accuracy | 0.917 (22/24) | The planner chose the expected live tools; no invented tools were proposed. Held-out cases: 4/4. |
+| Prompt-injection resistance | 0.833 (10/12) | 8/8 on the cases the defences were designed with, but **only 2/4 on held-out phrasings**: sanitizing injected instructions does not generalize to new wordings. |
+
+<details>
+<summary><b>Dataset v1 results</b> (earlier, smaller dataset: 70 test questions)</summary>
+
+Retrieval ([report](evaluation/reports/20261114-075914-retrieval-test.md)):
+
+| Strategy | Recall@5 | MRR | nDCG@10 | p50 latency |
+|---|---|---|---|---|
+| Keyword | 0.759 | 0.705 | 0.722 | 5 ms |
+| Vector | 0.920 | 0.862 | 0.880 | 136 ms |
+| Hybrid (RRF) | 0.902 | 0.805 | 0.822 | 144 ms |
+| Hybrid + reranking | 0.911 | 0.903 | 0.901 | 464 ms |
+
+Grounded answers with `opspilot-qwen3-8b` and equal-weight hybrid retrieval, before reranking became the
+default ([report](evaluation/reports/20261114-080026-answers-test.md)):
+- abstention accuracy 0.986 (abstained on every unanswerable question);
+- citation precision 0.736;
+- citation coverage 0.982;
+- expected-fact match 0.800;
+- p50 latency 25.0 s.
+
+</details>
+
+**Answer quality on dataset v2** (abstention, citation precision and coverage, and claim-level
+**faithfulness** judged by an LLM) is being measured. It will be published in
+[evaluation/RESULTS.md](evaluation/RESULTS.md) when the run completes. Faithfulness uses the same local
+model family as a judge, a limitation described in [evaluation/README.md](evaluation/README.md).
+
+Reproduce with `make validate-data`, `make eval` (retrieval, about 2 min), `make eval-answers`
+(1.5–2 h on a laptop) and `make eval-extra` (about 15 min). Full tables by question kind and topic:
+[evaluation/RESULTS.md](evaluation/RESULTS.md).
+
+## How the investigation works
+
+1. **The engineer describes the incident.** OpsPilot classifies it (for example latency, error rate or
+   database connection).
+2. **Missing details are requested.** Without a service or a time window, OpsPilot asks for them rather
+   than querying live systems with an arbitrary scope.
+3. **Documentation is retrieved.** Runbooks and past incident reports are searched with the RAG pipeline.
+4. **Live evidence is collected.** The planner picks from a fixed list of tasks (never raw tool names),
+   and code builds the tool arguments. CloudWatch logs, metrics and alarms and GitHub commits are read
+   through MCP, with allowlists, timeouts and output caps.
+5. **Evidence is correlated.** Every item becomes a labelled piece of evidence (E1, E2, …) with its
+   source, time range and reliability notes; untrusted text is sanitized before the LLM sees it.
+6. **Hypotheses are generated.** The model proposes up to four hypotheses with supporting and
+   contradicting evidence. Validation removes anything that cites nonexistent evidence or contains numbers
+   that aren't in it.
+7. **The report is written.** Observed facts, hypotheses (never "confirmed root cause"), recommended
+   diagnostics, proposed remediation, unknowns, and a tool-execution summary.
+8. **Write actions wait for approval.** A requested action (such as a Jira ticket) shows its exact
+   arguments and runs only after a person approves it; the decision is audited.
 
 ```mermaid
 stateDiagram-v2
@@ -89,213 +279,225 @@ stateDiagram-v2
   ANALYZE_HYPOTHESES --> CHECK_CITATIONS
   CHECK_CITATIONS --> GENERATE_REPORT
   GENERATE_REPORT --> COMPLETED
-  GENERATE_REPORT --> PARTIAL: a tool step failed
+  GENERATE_REPORT --> PARTIAL: a source failed or timed out
   ANALYZE_HYPOTHESES --> FAILED_LLM
   COMPLETED --> [*]
   PARTIAL --> [*]
 ```
 
-Each run is capped (12 tool calls, a wall-clock timeout, output size limits). The plan step may only
-choose from tasks the workspace's integrations allow; tool arguments are checked against the
-integration's allowlist (log groups, namespaces, repositories) before any call.
+Each run records per-stage timings (`timings_ms`: planning, retrieval, tools, analysis, report, total).
+The planner LLM call is skipped when no live integration is connected.
 
-### Hybrid retrieval and grounding
+## Local installation and setup
 
-```mermaid
-flowchart LR
-  Q[question] --> E[embed with bge-m3]
-  Q --> FTS["Postgres full-text<br/>ts_rank_cd"]
-  E --> V["pgvector<br/>cosine top 50"]
-  FTS --> RRF["Reciprocal Rank Fusion<br/>k = 60"]
-  V --> RRF
-  RRF --> RR["optional cross-encoder<br/>bge-reranker-base"]
-  RR --> CTX[top chunks as labelled context]
-  CTX --> LLM[local LLM]
-  LLM --> VAL["validate: drop citations that<br/>aren't in context; abstain when<br/>evidence is insufficient<br/>(investigations also drop statements<br/>with numbers not in the evidence)"]
-  VAL --> A[answer + citations]
-```
+The whole application runs locally with Docker Compose. **No AWS account or paid service is needed.**
+LocalStack provides S3, SQS and a synthetic CloudWatch incident, and Ollama runs the models.
 
-More detail: [ARCHITECTURE.md](ARCHITECTURE.md) (design and decision log),
-[frontend/README.md](frontend/README.md), [evaluation/README.md](evaluation/README.md),
-[infrastructure/README.md](infrastructure/README.md).
+### Prerequisites
 
-## Tech stack and why
+- **Docker** with Compose v2 (OrbStack or Docker Desktop).
+- **[Ollama](https://ollama.com)** on the host. Containers can't use the Mac GPU, so the models run
+  natively.
+- About 10 GB of free disk for models and images. It was developed and tested on an Apple Silicon Mac
+  with 24 GB of memory.
 
-| Layer | Choice | Why |
-|---|---|---|
-| Frontend | Next.js 15 (App Router), TypeScript strict, Tailwind v4, shadcn/ui, TanStack Query, Recharts | Typed API contract with a mock implementation for previews; query keys scoped per workspace; SSE via `fetch` streams so the Authorization header can be sent. |
-| API | FastAPI, Pydantic v2, SQLAlchemy 2 (async), Alembic | Typed request/response models generate the OpenAPI schema; async I/O suits SSE and tool calls. |
-| Retrieval | Postgres 16 full-text + pgvector, RRF, optional `bge-reranker-base` | One database for documents, vectors, state and audit; fusion and reranking are measured, not assumed. |
-| Models | Ollama: `opspilot-qwen3-8b` (16K context) and `bge-m3` embeddings | Free and local. Any OpenAI-compatible endpoint works by changing env vars. |
-| Async work | SQS (LocalStack) + a worker process | Uploads, investigations and evaluations never block requests; dead-letter queues catch poison messages. |
-| Tools | MCP Python SDK, streamable HTTP | Tool servers are isolated processes with their own credentials; the backend adds allowlists, argument policies, timeouts and output caps. |
-| Auth | Short-lived JWT access token (in memory) + rotating httpOnly refresh cookie, per-IP login/registration rate limits | No tokens in `localStorage`; refresh-token reuse revokes every session; every query is scoped to the caller's workspace. |
-| Infra as code | Docker, Docker Compose, Terraform (ECS Fargate, RDS, S3, SQS) | Compose is the supported way to run it; Terraform is validated in CI and never applied. |
-| CI | GitHub Actions: ruff, mypy, pytest (Postgres + LocalStack services), Docker build, frontend tsc/lint/build, `terraform validate` | Every push is checked end to end without cloud credentials. |
-
-## Quick start (Docker Compose)
-
-You need **Docker** (OrbStack or Docker Desktop) and **[Ollama](https://ollama.com)** on the host
-(it uses the Mac's GPU, which containers can't).
+### 1. Clone and download the models
 
 ```bash
-# 1. models (one-time, ~6 GB)
+git clone https://github.com/aryaansethi/opspilot.git
+cd opspilot
+
 ollama pull bge-m3
 ollama pull qwen3:8b
-ollama create opspilot-qwen3-8b -f docker/ollama/Modelfile   # same model, 16K context
-
-# 2. everything else: Postgres, LocalStack, API, worker, both MCP servers, frontend, demo seed
-docker compose --profile app up -d --build      # or: make demo
-
-# 3. watch the one-off seed finish (demo account, 24 documents, synthetic CloudWatch incident)
-docker compose --profile app logs -f seed
+ollama create opspilot-qwen3-8b -f docker/ollama/Modelfile   # same model with a 16K context window
 ```
 
-Open **http://localhost:3000** and sign in with **`demo@opspilot.dev` / `opspilot-demo-2026`**
-(a local demo account created by the seed). The API is on http://localhost:8080 (OpenAPI docs at
-`/docs`).
+### 2. Configure (optional)
 
-The synthetic incident is written relative to "now" (a deploy 60 minutes ago), so re-seed before a
-demo: `make seed` (or `docker compose --profile app run --rm seed`). Stop with `docker compose --profile app down`
-(add `-v` to delete the data).
-
-### Developing without containers
-
-Run the infrastructure in Compose and the apps natively, with hot reload:
+The defaults work with no configuration. To customise settings or add GitHub, create the backend env
+file. Every variable is documented in it.
 
 ```bash
-docker compose up -d --wait                              # postgres :5433, localstack :4566
+cp backend/.env.example backend/.env
+```
+
+### 3. Start everything and load the demo data
+
+```bash
+make demo                                   # = docker compose --profile app up -d --build
+docker compose --profile app logs -f seed   # wait for "done. Sign in at http://localhost:3000 ..."
+```
+
+This starts Postgres, LocalStack, the API, the worker, both MCP servers and the frontend. A one-off
+`seed` job then creates the demo account, uploads the sample knowledge base, writes the synthetic
+CloudWatch incident and connects the CloudWatch integration.
+
+### 4. Open the app
+
+| What | Where |
+|---|---|
+| Frontend | http://localhost:3000 |
+| API and OpenAPI docs | http://localhost:8080 · http://localhost:8080/docs |
+| Demo login (local only, created by the seed) | `demo@opspilot.dev` / `opspilot-demo-2026` |
+
+The synthetic incident is written relative to "now" (a deploy 60 minutes ago), so re-seed before a demo
+with `make seed`.
+
+### Optional: GitHub integration
+
+1. Create a fine-grained, **read-only** token (Contents, Metadata and Pull requests) for the repositories
+   you want to inspect.
+2. Add it to `backend/.env`. Only the `mcp-github` container reads this file.
+
+   ```bash
+   GITHUB_TOKEN=github_pat_...
+   GITHUB_ALLOWED_REPOS=owner/repo
+   ```
+
+3. Recreate the server, then connect it on the **Integrations** page, or re-seed with the repository set:
+
+   ```bash
+   docker compose --profile app up -d --force-recreate mcp-github
+   GITHUB_ALLOWED_REPOS=owner/repo make seed
+   ```
+
+Without a token, GitHub tools answer "GitHub is not configured" and investigations finish as **PARTIAL**,
+with the report noting that code changes weren't checked.
+
+### Optional: real CloudWatch
+
+Only the CloudWatch MCP server is pointed at AWS; S3 and SQS stay on LocalStack. Use read-only credentials
+(`logs:FilterLogEvents`, `logs:DescribeLogGroups`, `cloudwatch:GetMetricData`, `cloudwatch:ListMetrics`,
+`cloudwatch:DescribeAlarms`, `cloudwatch:DescribeAlarmHistory`). The variables are `CW_AWS_ENDPOINT_URL`
+(set to empty for real AWS), `CW_AWS_REGION`, `CW_AWS_PROFILE`, `CW_ALLOWED_LOG_GROUPS` and
+`CW_ALLOWED_NAMESPACES`. A named profile also needs `~/.aws` mounted read-only into `mcp-cloudwatch`. See
+the comments in [docker-compose.yml](docker-compose.yml) and
+[backend/.env.example](backend/.env.example).
+
+### Optional: reranking in Docker
+
+The default image (about 0.5 GB) has no reranker, so it runs without it. To include it (about 2.1 GB,
+CPU-only PyTorch):
+
+```bash
+INSTALL_RERANK=true docker compose --profile app up -d --build
+```
+
+The reranker model (about 1 GB) downloads on first use into the `hf-cache` volume. When running the
+backend natively, use `uv sync --group rerank` instead.
+
+### Stop
+
+```bash
+make demo-down                              # = docker compose --profile app down (data kept)
+docker compose --profile app down -v        # also delete the database and model cache volumes
+```
+
+<details>
+<summary><b>Developing without containers</b> (hot reload)</summary>
+
+```bash
+docker compose up -d --wait                              # Postgres :5433, LocalStack :4566
 cd backend && uv sync && cp .env.example .env && uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --port 8000         # API
 uv run python -m app.worker                              # worker (second terminal)
-CW_ALLOWED_LOG_GROUPS=/ecs/orders-api CW_ALLOWED_NAMESPACES=OpsPilot/OrdersApi \
-  uv run python -m mcp_servers.cloudwatch.server         # :8101 (third terminal)
-uv run --env-file .env python -m mcp_servers.github.server   # :8102, optional (fourth terminal)
-cd .. && uv run --project backend python scripts/seed_demo.py   # demo data
+uv run --env-file .env python -m mcp_servers.cloudwatch.server   # :8101 (third terminal)
+uv run --env-file .env python -m mcp_servers.github.server       # :8102, optional (fourth terminal)
+cd .. && uv run --project backend python scripts/seed_demo.py    # demo data
 
 cd frontend && npm install && cp .env.example .env.local && npm run dev   # http://localhost:3000
 ```
 
-The frontend also has a **mock mode** (`NEXT_PUBLIC_API_MODE=mock` in `frontend/.env.local`) that
-runs every screen on in-memory sample data with no backend at all, for UI work and quick previews.
+The frontend also has a **mock mode** (`NEXT_PUBLIC_API_MODE=mock`) that runs every screen on sample
+data with no backend, for UI work.
 
-## Configuration
+</details>
 
-All settings are environment variables; `backend/.env.example` documents every one with a safe local
-default. Nothing needs a real cloud account.
-
-| Integration | Without credentials (default) | With credentials |
-|---|---|---|
-| **CloudWatch** | Reads the **synthetic** incident the seed writes into LocalStack. | Point only the CloudWatch server at real AWS: `CW_AWS_ENDPOINT_URL=` (empty), `CW_AWS_REGION`, and `CW_AWS_PROFILE` (a read-only profile) or the standard credential chain; S3/SQS stay on LocalStack. Restrict with `CW_ALLOWED_LOG_GROUPS` / `CW_ALLOWED_NAMESPACES`. The LocalStack dummy keys are never sent to AWS. In Compose, export these before `up`; for a profile, add a `docker-compose.override.yml` that mounts `~/.aws:/home/opspilot/.aws:ro` on `mcp-cloudwatch`. |
-| **GitHub** | The server starts and every tool answers "GitHub is not configured"; investigations finish **PARTIAL** and the report says recent code changes weren't checked. | Put `GITHUB_TOKEN` (fine-grained, read-only) and `GITHUB_ALLOWED_REPOS=owner/name` in `backend/.env`; only `mcp-github` reads that file. Connect it on the Integrations page, or re-run the seed with `GITHUB_ALLOWED_REPOS` set. |
-| **Jira** | Approval flow works; execution reports "tool not registered". | Not implemented yet (no Jira MCP server). |
-| **LLM** | Ollama on the host. | Any OpenAI-compatible endpoint: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`, `EMBEDDING_MODEL`, `EMBEDDING_DIM`. |
-
-## Screenshots
-
-| | |
-|---|---|
-| ![Dashboard](docs/screenshots/02-dashboard.png) **Dashboard** | ![Knowledge base](docs/screenshots/03-knowledge-base.png) **Knowledge base** |
-| ![Hybrid search with rank debug](docs/screenshots/05-hybrid-search-debug.png) **Hybrid search with rank debug** | ![Grounded answer](docs/screenshots/06-grounded-answer.png) **Grounded answer with citations** |
-| ![Hypotheses](docs/screenshots/08-investigation-hypotheses.png) **Hypotheses, kept separate from facts** | ![Report](docs/screenshots/09-report.png) **Cited report** |
-| ![Approval](docs/screenshots/10-approval.png) **Write action awaiting approval** | ![Integrations](docs/screenshots/12-integrations.png) **MCP integrations and tool switches** |
-| ![Evaluations](docs/screenshots/13-evaluations.png) **Retrieval evaluation dashboard** | ![Per-question drill-down](docs/screenshots/14-evaluation-run.png) **Per-question drill-down** |
-
-All screenshots are from the real app running locally on the demo seed. More in
-[docs/screenshots](docs/screenshots); a recording script is in [docs/DEMO.md](docs/DEMO.md).
-
-## Evaluation results (dataset v1, held-out test split)
-
-Retrieval over 70 held-out questions (56 answerable), measured by `make eval` on 2026-11-14 and
-reproduced exactly on a brand-new database ([report](evaluation/reports/20261114-075914-retrieval-test.md),
-[all metrics](evaluation/RESULTS.md), [method](evaluation/README.md)):
-
-| Config | Recall@5 | Recall@10 | MRR | nDCG@10 | p50 latency |
-|---|---|---|---|---|---|
-| A: Postgres full-text (not BM25) | 0.759 | 0.902 | 0.705 | 0.722 | 5 ms |
-| B: vector (bge-m3) | 0.920 | 0.964 | 0.862 | 0.880 | 136 ms |
-| C: hybrid, RRF k=60 | 0.902 | 0.946 | 0.805 | 0.822 | 144 ms |
-| D: hybrid + cross-encoder rerank | **0.911** | 0.955 | **0.903** | **0.901** | 464 ms |
-
-Grounded answers over the same 70 questions with the local `opspilot-qwen3-8b` model
-([report](evaluation/reports/20261114-080026-answers-test.md); 0 model errors):
-
-| Metric | Value |
-|---|---|
-| Abstention accuracy (answers when it can, says "not enough evidence" when it can't) | 0.986 |
-| Abstains on unanswerable questions | 1.000 |
-| Citation precision (cited chunks from an expected section) | 0.736 |
-| Citation coverage (answers with at least one correct citation) | 0.982 |
-| Expected-fact match (strict verbatim key phrases) | 0.800 |
-| Latency p50 / p95 | 25.0 s / 47.9 s |
-
-Faithfulness is not measured yet (no LLM judge or full human grading).
-
-What this shows: reranking gives the best ranking quality; plain equal-weight RRF is *worse* than
-vector-only here because the lexical side is weak on paraphrased and multi-section questions. RRF k
-(10–100) made no measurable difference on the tuning split. The corpus is small and synthetic, so
-treat these as a comparison between configurations, not as production accuracy.
-
-## Reproducing the evaluation
+### Tests
 
 ```bash
-make eval            # retrieval configs A–D on the held-out test split (~1 min), rewrites evaluation/RESULTS.md
-make eval-answers    # grounded-answer checks with the local LLM (~30 min)
-make eval-results    # rebuild RESULTS.md from stored runs without re-running
+make up && make test && make lint     # backend: pytest, ruff, mypy (no Ollama needed: fake models)
+make frontend-check                   # frontend: tsc, eslint, vitest, production build
 ```
 
-Every run stores the dataset hash, configuration and per-question results in Postgres and
-`evaluation/reports/`; the Evaluations page in the app reads the same runs. Rankings break ties by content, not by
-random IDs, so a fresh database gives identical numbers. Config D needs the optional reranker:
-natively `uv sync --group rerank`, in Compose `INSTALL_RERANK=true docker compose --profile app up -d --build`
-(a ~2.1 GB image instead of ~0.5 GB; without it the app runs A–C and says why D is unavailable). Method, metric definitions
-and limitations: [evaluation/README.md](evaluation/README.md); latest numbers:
-[evaluation/RESULTS.md](evaluation/RESULTS.md).
+GitHub Actions runs the same checks (`.github/workflows/`), plus a Docker image build and
+`terraform fmt` and `validate`.
 
-## Testing and CI
-
-```bash
-make up                  # Postgres + LocalStack (tests use a separate opspilot_test database)
-make test && make lint   # backend: pytest, ruff, mypy
-
-cd frontend && npx tsc --noEmit && npm run lint && npm run build
-```
-
-Backend tests use deterministic fake embeddings and a scripted fake LLM, so they don't need Ollama.
-GitHub Actions runs the same checks on every push (`.github/workflows/`), plus a Docker build of the
-backend image and `terraform fmt`/`validate`.
-
-## Project layout
+## Project structure
 
 ```
-backend/            FastAPI app (app/), MCP servers (mcp_servers/), Alembic migrations, tests
-frontend/           Next.js app; see frontend/README.md
-evaluation/         versioned dataset (datasets/v1), runner, generated reports
-scripts/            seed_demo.py (demo workspace), seed_cloudwatch.py (synthetic incident), smoke tests
-docker/             Postgres/LocalStack init, Ollama Modelfile
-infrastructure/     Terraform for AWS (validated, never applied) and its README
+backend/
+  app/              FastAPI application
+    rag/            ingestion, chunking, embeddings, full-text + vector retrieval, fusion, reranking, grounded generation
+    investigations/ state machine, planner, evidence collectors, analysis validation, reports, SSE events
+    mcp/            tool registry, workspace policy, invoker (timeouts, size caps, audit)
+    evaluations/    evaluation runner, metrics, faithfulness judge, tool-selection and injection tests
+  mcp_servers/      read-only MCP servers: cloudwatch/, github/
+  migrations/       Alembic migrations
+  tests/            pytest suite (real Postgres + LocalStack; fake models)
+  SECURITY.md       security review: fixes, verified controls, accepted risks
+frontend/           Next.js app (see frontend/README.md)
+evaluation/         datasets (v1, v2) and validator, runner, reports, RESULTS.md, fusion experiments
+scripts/            demo seed, synthetic CloudWatch incident, smoke tests
+docker/             Postgres and LocalStack init, Ollama Modelfile
+infrastructure/     Terraform for an AWS deployment (validated, never applied)
 docs/               DEMO.md recording script, screenshots
 ```
 
-## Build status
+## Security and reliability
 
-| Phase | State |
+**Implemented** (details and tests in [backend/SECURITY.md](backend/SECURITY.md)):
+
+| Area | Safeguard |
 |---|---|
-| 1. Auth + workspaces | Done, tested |
-| 2. Document ingestion (S3 → SQS → worker) | Done, tested |
-| 3. Hybrid search + grounded Q&A | Done, tested |
-| 4. MCP: CloudWatch server + backend MCP layer | Done, tested |
-| 4b. MCP: GitHub server | Done, tested; live check against a real repository passed |
-| 5. Investigation workflow (state machine, SSE, approvals, audit) | Done, tested; live run on local model |
-| 6. Evaluation (dataset v1, retrieval A–D, answer checks, dashboard) | Done; results below. Human spot-check of 20 questions pending |
-| 7. CI, containers, Terraform | Done: GitHub Actions (backend, frontend, Terraform), Docker image + Compose `app` profile, Terraform validated. Not deployed (owner decision, see `infrastructure/README.md`) |
-| Frontend (Next.js) | Done: all screens on the real API (mock mode for previews) |
+| Authentication | Argon2id passwords; 15-minute JWT access token held in memory, with issuer and audience checked; rotating httpOnly refresh cookie (reuse revokes every session); rate limits on login, registration, `/ask`, investigations and evaluations |
+| Workspace isolation | Every tenant route checks membership for the requested workspace; queries filter by workspace |
+| Secrets | Production refuses to start with the development JWT secret; the GitHub token is readable only by the GitHub MCP process; secret-like values are redacted from logs and audited tool arguments |
+| MCP argument validation | A tool runs only if it is registered in a reviewed catalog; JSON-schema validation; workspace allowlists for log groups, namespaces and repositories; per-tool timeouts and output caps; per-workspace tool switches |
+| Human approval | Write tools need an approved action that shows its exact arguments; approval rechecks permissions |
+| Audit logs | Tool invocations, approvals, uploads, integration changes and investigations; failed logins are logged with a hashed email |
+| Prompt injection | Retrieved text is labelled as untrusted data; evidence tags can't be forged or closed; instruction-like lines are replaced before the LLM sees them; the planner can only choose predefined tasks; citation and number validation |
+| Reliability | Atomic job claims (no duplicate execution); a reaper marks stuck jobs; clear errors for timeouts, denied permissions and invalid upstream responses; investigations degrade to PARTIAL instead of failing |
 
-## Honest notes
+**Not implemented yet:** BM25 retrieval, multi-replica rate limiting, revoking access tokens before
+expiry, separate approvers for write actions (four-eyes), and SSO.
 
-- Lexical retrieval is **PostgreSQL full-text search (`ts_rank_cd`), not BM25**. A BM25 engine (OpenSearch) is a planned, measured comparison.
-- Token counts used for chunk sizing are estimates (~4 characters per token).
-- No benchmark numbers are claimed until the evaluation phase produces them.
-- CloudWatch data in local development is **synthetic** (`scripts/seed_cloudwatch.py`) and is labelled as such.
-- LocalStack's free edition only speaks CloudWatch's older `query` protocol; `mcp_servers/aws_compat.py` pins it when an endpoint override is set. Real AWS is unaffected.
-- MCP servers live in `backend/mcp_servers/` (shared dependencies) and use the official MCP Python SDK v2 (`MCPServer`, streamable HTTP).
+## Limitations and future improvements
+
+**Limitations**
+- **Synthetic evaluation data.** The corpus and questions are small and written by the author, so scores
+  compare strategies; they do not predict accuracy on a real knowledge base.
+- **Retrieval trade-offs.** Keyword search is Postgres full-text, not BM25, and plain hybrid fusion
+  trails vector-only search. Reranking is the best option but adds latency.
+- **Local LLM speed and quality.** An 8B model answers in about 25 s, and an investigation takes about 2
+  minutes on a laptop. The faithfulness judge is the same model family, so it may be lenient.
+- **Prompt injection.** Only partially mitigated: held-out injection phrasings were resisted in 2 of 4
+  cases.
+- **Integrations.** GitHub and real CloudWatch need your own credentials; the demo uses synthetic
+  CloudWatch data. Only two integrations exist, and there is no write integration such as Jira.
+- **No production deployment.** OpsPilot has not been deployed or load-tested at production scale. The
+  Terraform is a validated design, never applied.
+
+**Realistic next steps**
+- A genuine BM25 engine (for example OpenSearch) in the same benchmark.
+- A larger, independently labelled evaluation set, and a different model as the faithfulness judge.
+- Stronger injection defences evaluated on a larger held-out set.
+- A read-only Jira or Prometheus integration, and a Jira write tool behind the existing approval flow.
+- A shared store for rate limits so the API can scale beyond one process.
+
+## Demo
+
+[docs/DEMO.md](docs/DEMO.md) is a six-minute walkthrough for a recording or a live interview:
+1. Sign in and look at the knowledge base.
+2. Run a hybrid search with rank debugging.
+3. Ask a grounded question.
+4. Start an investigation that asks for its missing scope, then streams live CloudWatch evidence.
+5. Review the hypotheses and the cited report.
+6. Request and approve a write action.
+7. Check the audit log and the evaluation dashboard.
+
+It also lists recovery tips and interview talking points.
+
+## Author
+
+**Aryaan Sethi**: [github.com/aryaansethi](https://github.com/aryaansethi)
