@@ -1,5 +1,6 @@
 """Register / login / refresh (rotating) / logout / me."""
 
+import hashlib
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
@@ -11,6 +12,7 @@ from app.auth.deps import DB, CurrentUser
 from app.auth.schemas import LoginRequest, RegisterRequest, TokenResponse, UserOut
 from app.core.config import get_settings
 from app.core.errors import Conflict, Unauthorized
+from app.core.logging import log
 from app.core.ratelimit import limit
 from app.core.security import (
     create_access_token,
@@ -88,6 +90,12 @@ async def register(body: RegisterRequest, db: DB, response: Response) -> TokenRe
 async def login(body: LoginRequest, db: DB, response: Response) -> TokenResponse:
     user = await db.scalar(select(User).where(User.email == body.email))
     if not verify_password(body.password, user.password_hash if user else None) or user is None:
+        # Never log the password; the email is hashed so failures can be correlated, not read.
+        log.warning(
+            "auth.login_failed",
+            email_sha256=hashlib.sha256(body.email.lower().encode()).hexdigest()[:16],
+            known_user=user is not None,
+        )
         raise Unauthorized("Invalid email or password")
     return await _issue(db, response, user)
 

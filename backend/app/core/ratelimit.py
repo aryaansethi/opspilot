@@ -25,6 +25,7 @@ _hits: dict[tuple[str, str], list[float]] = defaultdict(list)
 def reset() -> None:
     """Test hook."""
     _hits.clear()
+    _streams.clear()
 
 
 def limit(
@@ -46,3 +47,40 @@ def limit(
         _hits[key] = recent
 
     return dependency
+
+
+def limit_key(name: str, key: str, max_requests: int, window_seconds: float) -> None:
+    """Check-and-record for an arbitrary key (e.g. a user id). Raises TooManyRequests."""
+    now = time.monotonic()
+    k = (name, key)
+    recent = [t for t in _hits[k] if now - t < window_seconds]
+    if len(recent) >= max_requests:
+        retry = int(window_seconds - (now - recent[0])) + 1
+        _hits[k] = recent
+        raise TooManyRequests(
+            f"Too many {name} requests; try again in {retry} seconds",
+            {"retry_after_seconds": retry},
+        )
+    recent.append(now)
+    _hits[k] = recent
+
+
+_streams: dict[str, int] = defaultdict(int)
+
+
+class StreamSlot:
+    """Caps concurrent live streams per user (each holds a database connection)."""
+
+    def __init__(self, user_id: str, max_streams: int) -> None:
+        self.user_id, self.max_streams = user_id, max_streams
+
+    def __enter__(self) -> "StreamSlot":
+        if _streams[self.user_id] >= self.max_streams:
+            raise TooManyRequests(
+                f"Too many open live streams (max {self.max_streams}); close a tab"
+            )
+        _streams[self.user_id] += 1
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        _streams[self.user_id] = max(0, _streams[self.user_id] - 1)

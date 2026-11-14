@@ -2,6 +2,7 @@
 
 import base64
 import uuid
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 
@@ -12,10 +13,11 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.service import record
-from app.auth.deps import DB, Workspace, WorkspaceCtx
+from app.auth.deps import DB, Workspace, WorkspaceCtx, limit_user
 from app.auth.schemas import UserOut
 from app.core.config import get_settings
 from app.core.errors import AppError, Conflict, Forbidden, NotFound
+from app.core.ratelimit import StreamSlot
 from app.documents import storage
 from app.investigations import events as ev
 from app.investigations.engine import hypothesis_dict
@@ -233,7 +235,13 @@ async def _enqueue(inv: Investigation) -> None:
 
 
 # ------------------------------------------------------------------ investigations
-@router.post("/investigations", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/investigations",
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[
+        limit_user("investigation", get_settings().investigation_rate_limit_per_minute, 60)
+    ],
+)
 async def create_investigation(
     body: InvestigationCreate, db: DB, ctx: Workspace
 ) -> dict[str, uuid.UUID]:
@@ -340,8 +348,19 @@ async def investigation_events(
         after = max(0, int(last_event_id)) if last_event_id else 0
     except ValueError:
         after = 0
+    # Each live stream holds a database connection: cap them per user (429 when exceeded).
+    slot = StreamSlot(str(ctx.user.id), get_settings().max_live_streams_per_user)
+    slot.__enter__()
+
+    async def guarded() -> AsyncIterator[str]:
+        try:
+            async for frame in ev.stream(db, investigation_id, after, follow=follow):
+                yield frame
+        finally:
+            slot.__exit__()
+
     return StreamingResponse(
-        ev.stream(db, investigation_id, after, follow=follow),
+        guarded(),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

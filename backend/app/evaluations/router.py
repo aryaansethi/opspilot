@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.auth.deps import DB, Workspace
+from app.auth.deps import DB, Workspace, limit_user
 from app.core.config import get_settings
 from app.core.errors import AppError, Forbidden, NotFound
 from app.documents import storage
@@ -85,7 +85,12 @@ def _out(r: EvaluationRun) -> RunOut:
     )
 
 
-@router.post("/run", response_model=RunOut, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/run",
+    response_model=RunOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[limit_user("evaluation", get_settings().evaluation_rate_limit_per_hour, 3600)],
+)
 async def start_run(body: RunRequest, db: DB, ctx: Workspace) -> RunOut:
     """Queue one configuration, or all four retrieval configurations when none is given (returns the first)."""
     if ctx.role != "owner":

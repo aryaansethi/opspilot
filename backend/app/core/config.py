@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     refresh_cookie_name: str = "opspilot_refresh"
     login_rate_limit_per_minute: int = 10
     register_rate_limit_per_hour: int = 20
+    ask_rate_limit_per_minute: int = 30
+    investigation_rate_limit_per_minute: int = 10
+    evaluation_rate_limit_per_hour: int = 30
+    max_live_streams_per_user: int = 5
     cookie_secure: bool = False  # True in production (HTTPS)
 
     # --- AWS (LocalStack locally) ---

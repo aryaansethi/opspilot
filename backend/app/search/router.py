@@ -7,7 +7,7 @@ from typing import Any, Literal
 from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
-from app.auth.deps import DB, Workspace
+from app.auth.deps import DB, Workspace, limit_user
 from app.core.config import get_settings
 from app.core.errors import AppError, Forbidden
 from app.rag.embeddings.provider import get_embedding_provider
@@ -177,7 +177,11 @@ class AskResponse(BaseModel):
     generation_ms: float
 
 
-@router.post("/ask", response_model=AskResponse)
+@router.post(
+    "/ask",
+    response_model=AskResponse,
+    dependencies=[limit_user("ask", get_settings().ask_rate_limit_per_minute, 60)],
+)
 async def ask(body: AskRequest, db: DB, ctx: Workspace) -> AskResponse:
     s = get_settings()
     started = time.perf_counter()

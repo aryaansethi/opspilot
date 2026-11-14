@@ -2,8 +2,9 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
@@ -45,6 +46,16 @@ def create_app() -> FastAPI:
         allow_headers=["Authorization", "Content-Type", "X-Workspace-Id", "Last-Event-ID"],
     )
     install_error_handlers(app)
+
+    @app.middleware("http")
+    async def security_headers(request: Request, call_next: Any) -> Response:
+        response: Response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        if request.url.path.startswith(f"{s.api_prefix}/auth"):
+            response.headers["Cache-Control"] = "no-store"  # tokens must not be cached
+        return response
 
     @app.get("/healthz", tags=["health"])
     async def healthz() -> dict[str, str]:

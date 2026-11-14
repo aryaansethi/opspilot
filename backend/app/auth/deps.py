@@ -6,7 +6,7 @@ Tenant isolation is enforced here: every workspace-scoped route depends on
 
 import uuid
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import Depends, Header
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import Forbidden, Unauthorized
+from app.core.ratelimit import limit_key
 from app.core.security import decode_access_token
 from app.db.session import get_session
 from app.models import User, WorkspaceMember
@@ -67,3 +68,12 @@ async def get_workspace_ctx(
 
 
 Workspace = Annotated[WorkspaceCtx, Depends(get_workspace_ctx)]
+
+
+def limit_user(name: str, max_requests: int, window_seconds: float) -> Any:
+    """Per-user rate limit for expensive endpoints (LLM calls, background jobs)."""
+
+    async def dependency(user: CurrentUser) -> None:
+        limit_key(name, str(user.id), max_requests, window_seconds)
+
+    return Depends(dependency)

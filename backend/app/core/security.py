@@ -27,6 +27,10 @@ def verify_password(password: str, password_hash: str | None) -> bool:
         return False
 
 
+TOKEN_ISSUER = "opspilot-api"  # noqa: S105 - an issuer name, not a secret
+TOKEN_AUDIENCE = "opspilot-app"  # noqa: S105 - an audience name, not a secret
+
+
 def create_access_token(user_id: uuid.UUID) -> str:
     s = get_settings()
     now = datetime.now(UTC)
@@ -35,6 +39,8 @@ def create_access_token(user_id: uuid.UUID) -> str:
         "iat": now,
         "exp": now + timedelta(minutes=s.access_token_ttl_minutes),
         "type": "access",
+        "iss": TOKEN_ISSUER,
+        "aud": TOKEN_AUDIENCE,
     }
     return jwt.encode(payload, s.jwt_secret.get_secret_value(), algorithm=s.jwt_algorithm)
 
@@ -42,7 +48,14 @@ def create_access_token(user_id: uuid.UUID) -> str:
 def decode_access_token(token: str) -> uuid.UUID | None:
     s = get_settings()
     try:
-        payload = jwt.decode(token, s.jwt_secret.get_secret_value(), algorithms=[s.jwt_algorithm])
+        payload = jwt.decode(
+            token,
+            s.jwt_secret.get_secret_value(),
+            algorithms=[s.jwt_algorithm],
+            issuer=TOKEN_ISSUER,
+            audience=TOKEN_AUDIENCE,
+            options={"require": ["exp", "iat", "sub", "iss", "aud"]},
+        )
     except jwt.PyJWTError:
         return None
     if payload.get("type") != "access":

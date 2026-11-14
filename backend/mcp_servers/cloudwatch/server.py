@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 from functools import lru_cache
 from typing import Annotated, Any, Literal
 
+from botocore.exceptions import ClientError, EndpointConnectionError, NoCredentialsError
 from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import Field
@@ -66,6 +67,41 @@ def _client(service: str) -> Any:
     )
 
 
+_AWS_DENIED = {
+    "AccessDenied",
+    "AccessDeniedException",
+    "UnauthorizedOperation",
+    "UnrecognizedClientException",
+    "InvalidClientTokenId",
+    "ExpiredToken",
+    "ExpiredTokenException",
+}
+
+
+async def _aws(service: str, method: str, **kwargs: Any) -> Any:
+    """Call AWS in a thread and turn AWS failures into clear, safe tool errors."""
+    try:
+        return await asyncio.to_thread(getattr(_client(service), method), **kwargs)
+    except NoCredentialsError:
+        raise ToolInputError(
+            "No AWS credentials found for CloudWatch. Use LocalStack (default) or set CW_AWS_PROFILE."
+        ) from None
+    except EndpointConnectionError:
+        raise ToolInputError("The CloudWatch endpoint is unreachable.") from None
+    except ClientError as e:
+        code = e.response.get("Error", {}).get("Code", "Unknown")
+        if code in _AWS_DENIED:
+            raise ToolInputError(
+                f"AWS denied {service}:{method} ({code}). The CloudWatch server's credentials lack "
+                "read-only permission for this resource."
+            ) from None
+        if "Throttl" in code or code == "RequestLimitExceeded":
+            raise ToolInputError("AWS throttled the request; try again shortly.") from None
+        if code == "ResourceNotFoundException":
+            raise ToolInputError(f"AWS resource not found ({method}).") from None
+        raise ToolInputError(f"AWS error {code}.") from None
+
+
 def _window(start_time: str, end_time: str) -> tuple[datetime, datetime]:
     try:
         start = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
@@ -111,7 +147,7 @@ def _iso(ms_or_dt: int | datetime) -> str:
 @mcp.tool(description="List allowlisted CloudWatch log groups.")
 async def list_log_groups() -> dict[str, Any]:
     allowed = _allow("CW_ALLOWED_LOG_GROUPS")
-    resp = await asyncio.to_thread(_client("logs").describe_log_groups, limit=50)
+    resp = await _aws("logs", "describe_log_groups", limit=50)
     groups = [g["logGroupName"] for g in resp.get("logGroups", []) if g["logGroupName"] in allowed]
     return {"log_groups": sorted(groups)}
 
@@ -141,7 +177,7 @@ async def filter_log_events(
     events: list[dict[str, Any]] = []
     truncated = False
     for _ in range(MAX_PAGES):
-        resp = await asyncio.to_thread(_client("logs").filter_log_events, **kwargs)
+        resp = await _aws("logs", "filter_log_events", **kwargs)
         for e in resp.get("events", []):
             msg = e["message"]
             # Re-apply simple term patterns server-side (LocalStack only partially implements
@@ -184,7 +220,7 @@ async def list_metrics(
     kwargs: dict[str, Any] = {"Namespace": namespace}
     if dimensions:
         kwargs["Dimensions"] = [{"Name": k, "Value": v} for k, v in dimensions.items()]
-    resp = await asyncio.to_thread(_client("cloudwatch").list_metrics, **kwargs)
+    resp = await _aws("cloudwatch", "list_metrics", **kwargs)
     seen: dict[tuple[str, tuple[tuple[str, str], ...]], dict[str, Any]] = {}
     for m in resp.get("Metrics", [])[:200]:
         dims = tuple(sorted((d["Name"], d["Value"]) for d in m.get("Dimensions", [])))
@@ -212,8 +248,9 @@ async def get_metric_data(
     if (end - start).total_seconds() / period_seconds > MAX_DATAPOINTS:
         raise ToolInputError("Too many datapoints; increase period_seconds")
     dims = [{"Name": k, "Value": v} for k, v in (dimensions or {}).items()]
-    resp = await asyncio.to_thread(
-        _client("cloudwatch").get_metric_data,
+    resp = await _aws(
+        "cloudwatch",
+        "get_metric_data",
         MetricDataQueries=[
             {
                 "Id": "m1",
@@ -265,7 +302,7 @@ async def describe_alarms(
         kwargs["AlarmNamePrefix"] = alarm_name_prefix
     if state:
         kwargs["StateValue"] = state
-    resp = await asyncio.to_thread(_client("cloudwatch").describe_alarms, **kwargs)
+    resp = await _aws("cloudwatch", "describe_alarms", **kwargs)
     allowed_ns = _allow("CW_ALLOWED_NAMESPACES")
     alarms = [
         {
@@ -294,8 +331,9 @@ async def get_alarm_history(
     names = {a["name"] for a in (await describe_alarms(alarm_name_prefix=alarm_name))["alarms"]}
     if alarm_name not in names:
         raise ToolInputError(f"Alarm '{alarm_name}' not found in allowlisted namespaces")
-    resp = await asyncio.to_thread(
-        _client("cloudwatch").describe_alarm_history,
+    resp = await _aws(
+        "cloudwatch",
+        "describe_alarm_history",
         AlarmName=alarm_name,
         HistoryItemType="StateUpdate",
         StartDate=start,

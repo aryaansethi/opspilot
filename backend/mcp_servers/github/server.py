@@ -93,8 +93,13 @@ def _check_repo(repository: str) -> str:
 
 
 async def _get(path: str, params: dict[str, Any] | None = None) -> Any:
-    async with _client() as c:
-        r = await c.get(path, params=params)
+    try:
+        async with _client() as c:
+            r = await c.get(path, params=params)
+    except httpx.TimeoutException:
+        raise ToolInputError("GitHub did not respond in time; try again later.") from None
+    except httpx.TransportError as e:
+        raise ToolInputError(f"GitHub is unreachable ({type(e).__name__}).") from None
     if r.status_code == 401:
         raise ToolInputError("GitHub rejected the token (401). Check GITHUB_TOKEN.")
     if r.status_code == 403 and r.headers.get("x-ratelimit-remaining") == "0":
@@ -109,8 +114,16 @@ async def _get(path: str, params: dict[str, Any] | None = None) -> Any:
         raise ToolInputError(
             f"GitHub rejected the request: {r.json().get('message', 'invalid input')}"
         )
-    r.raise_for_status()
-    return r.json()
+    if r.status_code >= 500:
+        raise ToolInputError(
+            f"GitHub returned {r.status_code} (a temporary GitHub error); try again later."
+        )
+    if r.status_code >= 400:
+        raise ToolInputError(f"GitHub returned an unexpected status {r.status_code}.")
+    try:
+        return r.json()
+    except ValueError:
+        raise ToolInputError("GitHub returned a response that is not valid JSON.") from None
 
 
 def _iso(value: str | None) -> str | None:
