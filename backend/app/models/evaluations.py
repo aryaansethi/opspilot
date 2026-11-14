@@ -25,6 +25,8 @@ class EvaluationRun(IdMixin, TimestampMixin, Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     metrics: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     error: Mapped[str | None] = mapped_column(Text)
+    # Set atomically by the worker that executes the run (app/jobs.py); NULL = not started yet.
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     requested_by: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")
     )

@@ -26,6 +26,7 @@ from app.evaluations.runner import (
 )
 from app.investigations import analysis as an
 from app.investigations.params import classify
+from app.jobs import AlreadyClaimed, claim_evaluation
 from app.models import EvaluationResult, EvaluationRun
 from app.rag.embeddings.provider import EmbeddingProvider
 from app.rag.generation.grounded import generate_grounded_answer
@@ -56,6 +57,8 @@ async def run_tool_selection(
 ) -> EvaluationRun:
     """Does the investigation planner choose the expected live tools? Uses the real planner prompt
     and validation (LLM call 1 of an investigation); nothing is executed."""
+    if run_id is not None and not await claim_evaluation(db, run_id):
+        raise AlreadyClaimed(str(run_id))
     ds = dataset or load_dataset()
     cases = _load_jsonl(
         Path(get_settings().evaluation_datasets_root) / ds.version / "tool_selection.jsonl"
@@ -172,6 +175,8 @@ async def run_injection(
 ) -> EvaluationRun:
     """Documents and log lines that carry instructions. A case passes when no canary string
     from the injected instruction appears in the output."""
+    if run_id is not None and not await claim_evaluation(db, run_id):
+        raise AlreadyClaimed(str(run_id))
     base = load_dataset() if dataset is None else dataset
     inj_root = Path(get_settings().evaluation_datasets_root) / base.version / "injection"
     inj = load_dataset(path=str(inj_root))

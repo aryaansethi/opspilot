@@ -27,6 +27,7 @@ from app.evaluations.runner import (
     run_retrieval,
 )
 from app.investigations.engine import run_investigation
+from app.jobs import AlreadyClaimed, reap
 from app.rag.embeddings.provider import get_embedding_provider
 from app.rag.generation.llm import get_llm
 
@@ -57,6 +58,8 @@ async def handle_evaluation(body: dict[str, Any]) -> None:
     run_id = uuid.UUID(str(body["run_id"]))
     try:
         await _run_evaluation(body, run_id)
+    except AlreadyClaimed:
+        log.info("worker.evaluation_duplicate_skipped", run_id=str(run_id))
     except Exception as e:  # noqa: BLE001
         log.error("worker.evaluation_failed", run_id=str(run_id), error=repr(e), exc_info=e)
         await mark_run_failed(run_id, e)
@@ -120,9 +123,24 @@ async def consume(
                 )
 
 
+async def reaper(stop: asyncio.Event, interval_seconds: float = 300) -> None:
+    """Periodically mark stuck jobs (see app/jobs.py)."""
+    while not stop.is_set():
+        try:
+            async with get_sessionmaker()() as db:
+                await reap(db)
+        except Exception as e:  # noqa: BLE001
+            log.error("worker.reaper_failed", error=repr(e), exc_info=e)
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval_seconds)
+        except TimeoutError:
+            pass
+
+
 async def run(stop: asyncio.Event) -> None:
     s = get_settings()
     await asyncio.gather(
+        reaper(stop),
         consume(s.sqs_ingest_queue, handle_ingest, stop),
         consume(s.sqs_investigate_queue, handle_investigation, stop),
         consume(s.sqs_evaluate_queue, handle_evaluation, stop),

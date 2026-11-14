@@ -25,6 +25,7 @@ from app.investigations.collectors import Collector
 from app.investigations.events import emit
 from app.investigations.params import classify, missing_parameters
 from app.investigations.report import build_report, scope_text
+from app.jobs import claim_investigation
 from app.models import (
     ConnectedIntegration,
     EvidenceItem,
@@ -35,7 +36,6 @@ from app.models import (
     User,
     WorkspaceMember,
 )
-from app.models.investigations import TERMINAL_STATES
 from app.rag.embeddings.provider import EmbeddingProvider
 from app.rag.generation.llm import LLMError, LLMProvider
 
@@ -83,14 +83,20 @@ def allowed_tasks(integrations: dict[str, ConnectedIntegration]) -> list[str]:
 async def run_investigation(
     db: AsyncSession, investigation_id: uuid.UUID, *, llm: LLMProvider, embedder: EmbeddingProvider
 ) -> str:
+    before = await db.scalar(
+        select(Investigation.state).where(Investigation.id == investigation_id)
+    )
+    if not await claim_investigation(db, investigation_id):
+        # Unknown, finished, waiting for the user, or running in another worker right now.
+        inv = await db.get(Investigation, investigation_id)
+        return "missing" if inv is None else inv.state
     inv = await db.get(Investigation, investigation_id)
     if inv is None:
         return "missing"
-    if inv.state in TERMINAL_STATES or inv.state == "AWAITING_PARAMETERS":
-        return inv.state  # duplicate delivery or waiting for the user
+    await db.refresh(inv)
     try:
         async with asyncio.timeout(get_settings().investigation_timeout_seconds):
-            return await _run(db, inv, llm, embedder)
+            return await _run(db, inv, llm, embedder, claimed_from=before)
     except TimeoutError:
         await db.rollback()
         inv = await db.get(Investigation, investigation_id)
@@ -104,7 +110,11 @@ async def run_investigation(
 
 
 async def _run(
-    db: AsyncSession, inv: Investigation, llm: LLMProvider, embedder: EmbeddingProvider
+    db: AsyncSession,
+    inv: Investigation,
+    llm: LLMProvider,
+    embedder: EmbeddingProvider,
+    claimed_from: str | None = None,
 ) -> str:
     # A (re)delivered run always starts clean.
     for model in (EvidenceItem, Hypothesis, InvestigationReport):
@@ -118,8 +128,8 @@ async def _run(
     def lap(stage: str, started: float) -> None:
         timings[stage] = round((time.perf_counter() - started) * 1000, 1)
 
-    # 1. classify (rule-based, instant)
-    await set_state(db, inv, "CLASSIFY_REQUEST")
+    # 1. classify (rule-based, instant). The claim already moved the state; report the real origin.
+    await emit(db, inv, "state_changed", {"from": claimed_from, "to": "CLASSIFY_REQUEST"})
     inv.incident_type = inv.incident_type or classify(inv.question)
 
     # 2. parameters: ask instead of guessing a production scope

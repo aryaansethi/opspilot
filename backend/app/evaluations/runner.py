@@ -24,6 +24,7 @@ from app.core.logging import log
 from app.core.security import hash_password
 from app.evaluations.judge import judge_claims
 from app.evaluations.metrics import Expected, Retrieved, match, mean, percentile, score
+from app.jobs import AlreadyClaimed, claim_evaluation
 from app.models import (
     Document,
     DocumentChunk,
@@ -279,6 +280,8 @@ async def run_retrieval(
     dataset: Dataset | None = None,
     run_id: uuid.UUID | None = None,
 ) -> EvaluationRun:
+    if run_id is not None and not await claim_evaluation(db, run_id):
+        raise AlreadyClaimed(str(run_id))
     ds = dataset or load_dataset()
     s = get_settings()
     ws_id = await ensure_eval_workspace(db, ds, embedder)
@@ -431,6 +434,8 @@ async def run_answers(
 ) -> EvaluationRun:
     """Grounded-answer checks: abstention, citation precision/coverage, expected-fact match, and
     (judge=True) claim-level faithfulness judged by the LLM against each claim's cited evidence."""
+    if run_id is not None and not await claim_evaluation(db, run_id):
+        raise AlreadyClaimed(str(run_id))
     ds = dataset or load_dataset()
     s = get_settings()
     ws_id = await ensure_eval_workspace(db, ds, embedder)
