@@ -9,6 +9,7 @@ Limits: at most 2 LLM calls, `investigation_max_tool_calls` tool calls, and
 """
 
 import asyncio
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -37,6 +38,10 @@ from app.models import (
 from app.models.investigations import TERMINAL_STATES
 from app.rag.embeddings.provider import EmbeddingProvider
 from app.rag.generation.llm import LLMError, LLMProvider
+
+
+class _SkipPlanning(Exception):
+    """Internal: planning is unnecessary (no live sources)."""
 
 
 async def recover(db: AsyncSession, inv: Investigation) -> None:
@@ -105,7 +110,13 @@ async def _run(
     for model in (EvidenceItem, Hypothesis, InvestigationReport):
         await db.execute(delete(model).where(model.investigation_id == inv.id))  # type: ignore[attr-defined]
     inv.failed_steps, inv.error, inv.started_at, inv.finished_at = [], None, datetime.now(UTC), None
+    inv.timings_ms = None
     await db.commit()
+    timings: dict[str, float] = {}
+    t_run = time.perf_counter()
+
+    def lap(stage: str, started: float) -> None:
+        timings[stage] = round((time.perf_counter() - started) * 1000, 1)
 
     # 1. classify (rule-based, instant)
     await set_state(db, inv, "CLASSIFY_REQUEST")
@@ -144,7 +155,16 @@ async def _run(
         else ""
     )
     context = {k: v.config for k, v in integrations.items()}
+    t = time.perf_counter()
     try:
+        if not any(task in an.LIVE_TASKS for task in allowed):
+            # Only knowledge-base tasks are possible: an LLM plan could not change anything.
+            plan = an.default_plan(inv.incident_type or "other", allowed)
+            plan.source, plan.rationale = (
+                "no_live_sources",
+                "No live integrations connected; nothing to plan.",
+            )
+            raise _SkipPlanning
         raw = await an.run_plan(
             llm,
             an.plan_prompt(
@@ -158,7 +178,11 @@ async def _run(
             ),
         )
         plan = an.validate_plan(raw, inv.incident_type or "other", allowed)
+        lap("plan_llm", t)
+    except _SkipPlanning:
+        pass
     except (LLMError, Exception) as e:  # noqa: BLE001 - planning failure must not stop evidence gathering
+        lap("plan_llm", t)
         log.warning("investigation.plan_failed", error=repr(e))
         plan = an.default_plan(inv.incident_type or "other", allowed)
         inv.failed_steps = [
@@ -188,6 +212,7 @@ async def _run(
 
     # 4. knowledge base
     await set_state(db, inv, "RUN_KNOWLEDGE_RETRIEVAL")
+    t = time.perf_counter()
     try:
         if "search_runbooks" in plan.tasks:
             await col.knowledge(("runbook", "architecture", "other"), 4, "runbooks")
@@ -201,8 +226,11 @@ async def _run(
             db, inv, "step_failed", {"step": "RUN_KNOWLEDGE_RETRIEVAL", "error": type(e).__name__}
         )
 
+    lap("knowledge_retrieval", t)
+
     # 5. read-only tools, cheapest/most informative first
     await set_state(db, inv, "RUN_READ_TOOLS")
+    t = time.perf_counter()
     # Deploy/config lines are the most common explanation for regressions, so they are always
     # searched; the model's terms fill the remaining slot(s). ERROR is already summarised.
     extra = [t for t in plan.log_search_terms if t.upper() != "ERROR"]
@@ -226,6 +254,9 @@ async def _run(
             col.failed_steps.append(f"{task}: {type(e).__name__}")
             await emit(db, inv, "step_failed", {"step": task, "error": type(e).__name__})
 
+    if any(task in plan.tasks for task, _ in steps):
+        lap("read_tools", t)
+
     # 6. evidence is normalised as it is collected
     await set_state(db, inv, "NORMALIZE_EVIDENCE")
     evidence = list(
@@ -248,8 +279,10 @@ async def _run(
             an.EvidenceRef(str(e.id), e.label, e.source_system, e.title, e.excerpt)
             for e in evidence
         ]
+        t = time.perf_counter()
         try:
             raw = await an.run_analysis(llm, an.analysis_prompt(inv.question, scope, refs))
+            lap("analysis_llm", t)
             await set_state(db, inv, "CHECK_CITATIONS")
             analysis = an.validate_analysis(raw, refs)
         except Exception as e:  # noqa: BLE001
@@ -289,6 +322,7 @@ async def _run(
 
     # 9. report
     await set_state(db, inv, "GENERATE_REPORT")
+    t = time.perf_counter()
     statuses = list(
         await db.scalars(
             select(ToolInvocation.status).where(ToolInvocation.investigation_id == inv.id)
@@ -336,6 +370,9 @@ async def _run(
         )
     )
     inv.finished_at = datetime.now(UTC)
+    lap("report", t)
+    lap("total", t_run)
+    inv.timings_ms = timings
     await db.flush()
     await emit(db, inv, "report_ready", {"version": version})
 

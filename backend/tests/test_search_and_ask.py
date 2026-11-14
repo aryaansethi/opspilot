@@ -78,7 +78,8 @@ async def test_hybrid_debug_exposes_ranks(client: AsyncClient) -> None:
     assert abs(top["debug"]["rrf_score"] - (w / 61 + 1 / (60 + top["debug"]["vector_rank"]))) < 1e-9
     assert set(res["timings_ms"]) >= {"lexical", "embed_query", "vector"}
     plain = await search(client, u, query="redis")
-    assert plain["results"][0]["debug"] is None and plain["timings_ms"] is None
+    assert plain["results"][0]["debug"] is None
+    assert {"lexical", "embed_query", "vector", "fusion", "total"} <= set(plain["timings_ms"])
 
 
 async def test_filters_and_workspace_isolation(client: AsyncClient) -> None:
@@ -117,7 +118,7 @@ async def test_ask_returns_validated_citations(client: AsyncClient) -> None:
         set_llm(None)
     assert r.status_code == 200, r.text
     body = r.json()
-    assert body["latency_ms"] >= body["retrieval_ms"] > 0
+    assert body["latency_ms"] >= body["retrieval_ms"] > 0 and body["generation_ms"] >= 0
     assert body["insufficient_evidence"] is False
     assert len(body["claims"]) == 1  # the claim citing a non-retrieved label was dropped
     assert body["removed_invalid_citations"] == ["E9"]

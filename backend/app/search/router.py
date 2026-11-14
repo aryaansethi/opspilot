@@ -126,7 +126,7 @@ async def _run(body: SearchRequest, db: DB, ctx: Workspace, debug: bool) -> Sear
             "rrf_k": s.rrf_k,
             "reranker": reranker.name if reranker else None,
         },
-        timings_ms={k: round(v, 1) for k, v in out.timings_ms.items()} if debug else None,
+        timings_ms={k: round(v, 1) for k, v in out.timings_ms.items()},
     )
 
 
@@ -174,6 +174,7 @@ class AskResponse(BaseModel):
     removed_invalid_citations: list[str]
     latency_ms: float  # whole request: retrieval + generation
     retrieval_ms: float
+    generation_ms: float
 
 
 @router.post("/ask", response_model=AskResponse)
@@ -189,6 +190,7 @@ async def ask(body: AskRequest, db: DB, ctx: Workspace) -> AskResponse:
         filters=body.filters.to_filters(),
         top_k=s.answer_context_chunks,
     )
+    t_gen = time.perf_counter()
     try:
         g = await generate_grounded_answer(get_llm(), body.question, out.results)
     except LLMError as e:
@@ -223,4 +225,5 @@ async def ask(body: AskRequest, db: DB, ctx: Workspace) -> AskResponse:
         removed_invalid_citations=g.removed_labels,
         latency_ms=round((time.perf_counter() - started) * 1000, 1),
         retrieval_ms=round(out.latency_ms, 1),
+        generation_ms=round((time.perf_counter() - t_gen) * 1000, 1),
     )

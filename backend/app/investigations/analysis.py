@@ -34,6 +34,12 @@ _TERM = re.compile(r"^[A-Za-z0-9_.:\-]{2,40}$")
 _LABEL = re.compile(r"^\[?(E\d{1,3})\]?$")
 _ROOT_CAUSE = re.compile(r"\broot[- ]cause\b", re.I)
 LIVE_SOURCES = {"cloudwatch", "github", "jira"}
+LIVE_TASKS = (
+    "check_cloudwatch_alarms",
+    "query_cloudwatch_logs",
+    "query_cloudwatch_metrics",
+    "search_recent_github_commits",
+)
 _SCHEMA_KEY = re.compile(r"^[a-z]+(?:_[a-z]+)+$")
 _NUMBER = re.compile(r"\d+(?:[.:,\-/]\d+)*")
 

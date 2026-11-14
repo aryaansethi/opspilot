@@ -42,6 +42,7 @@ class Collector:
     tool_calls: int = 0
     failed_steps: list[str] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    _query_vector: list[float] | None = None
 
     # ---------------------------------------------------------------- helpers
     async def add_evidence(
@@ -154,6 +155,8 @@ class Collector:
     # ------------------------------------------------------------ knowledge
     async def knowledge(self, source_types: tuple[str, ...], top_k: int, label: str) -> None:
         query = f"{self.inv.question} {self.inv.service or ''}".strip()
+        if self._query_vector is None:  # embed once, reuse for every knowledge search
+            [self._query_vector] = await self.embedder.embed([query])
         out = await hybrid_search(
             self.db,
             self.inv.workspace_id,
@@ -161,6 +164,7 @@ class Collector:
             embedder=self.embedder,
             filters=SearchFilters(source_types=source_types),
             top_k=top_k,
+            query_vector=self._query_vector,
         )
         for rank, c in enumerate(out.results, start=1):
             loc = c.section_path or c.document_title

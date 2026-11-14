@@ -254,6 +254,18 @@ async def test_full_investigation_produces_validated_report(client: AsyncClient)
     llm = ScriptedLLM()
     assert await run(inv_id, llm) == "COMPLETED"
     assert llm.calls == ["investigation_plan", "investigation_analysis"]
+    inv_t = (await client.get(f"{API}/investigations/{inv_id}", headers=u["h"])).json()[
+        "timings_ms"
+    ]
+    assert {
+        "plan_llm",
+        "knowledge_retrieval",
+        "read_tools",
+        "analysis_llm",
+        "report",
+        "total",
+    } <= set(inv_t)
+    assert inv_t["total"] >= inv_t["read_tools"]
 
     inv = (await client.get(f"{API}/investigations/{inv_id}", headers=u["h"])).json()
     assert inv["state"] == "COMPLETED" and inv["incident_type"] == "db_connection"
@@ -428,13 +440,15 @@ async def test_no_evidence_skips_analysis(client: AsyncClient) -> None:
     inv_id = await start(client, u["h"], service="orders-api", **window())
     llm = ScriptedLLM()
     assert await run(inv_id, llm) == "COMPLETED"
-    assert llm.calls == ["investigation_plan"]
+    assert (
+        llm.calls == []
+    )  # no live sources and no evidence: neither planning nor analysis is needed
     rep = (await client.get(f"{API}/investigations/{inv_id}/report", headers=u["h"])).json()
     assert "No relevant evidence" in rep["overview"]
 
 
 async def test_timeout_stops_run(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    u = await workspace(client, integrations=(), docs=False)
+    u = await workspace(client, integrations=())  # docs present → the slow analysis call runs
     inv_id = await start(client, u["h"], service="orders-api", **window())
     monkeypatch.setattr(get_settings(), "investigation_timeout_seconds", 1)
     assert await run(inv_id, ScriptedLLM(delay=3)) == "PARTIAL"
@@ -738,3 +752,33 @@ async def test_unconfigured_github_server_makes_run_partial(
     assert (
         await client.get(f"{API}/investigations/{inv_id}/report", headers=u["h"])
     ).status_code == 200
+
+
+async def test_docs_only_run_skips_planning_and_embeds_once(client: AsyncClient) -> None:
+    from app.rag.embeddings.provider import HashingEmbeddings
+
+    class CountingEmbeddings(HashingEmbeddings):
+        calls = 0
+
+        async def embed(self, texts: list[str]) -> list[list[float]]:
+            CountingEmbeddings.calls += 1
+            return await super().embed(texts)
+
+    u = await workspace(client, integrations=())
+    inv_id = await start(client, u["h"], service="orders-api", **window())
+    llm = ScriptedLLM(
+        analysis={
+            "overview": "o",
+            "observed_facts": [],
+            "hypotheses": [],
+            "recommended_diagnostics": [],
+            "proposed_remediation": [],
+            "unknowns": [],
+        }
+    )
+    async with get_sessionmaker()() as db:
+        await run_investigation(db, uuid.UUID(inv_id), llm=llm, embedder=CountingEmbeddings())
+    assert llm.calls == ["investigation_analysis"]  # the planner LLM call is skipped
+    assert CountingEmbeddings.calls == 1  # runbooks + incidents searches share one query embedding
+    inv = (await client.get(f"{API}/investigations/{inv_id}", headers=u["h"])).json()
+    assert inv["plan"]["source"] == "no_live_sources" and "plan_llm" not in inv["timings_ms"]

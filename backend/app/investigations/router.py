@@ -64,6 +64,7 @@ class InvestigationOut(BaseModel):
     failed_steps: list[str]
     error: str | None
     plan: dict[str, Any] | None
+    timings_ms: dict[str, float] | None
     created_by: UserOut | None
     created_at: datetime
     updated_at: datetime
@@ -173,6 +174,7 @@ async def _inv_out(
         failed_steps=inv.failed_steps or [],
         error=inv.error,
         plan=inv.plan,
+        timings_ms=inv.timings_ms,
         created_by=users.get(inv.created_by) if inv.created_by else None,
         created_at=inv.created_at,
         updated_at=inv.updated_at,

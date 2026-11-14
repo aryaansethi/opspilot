@@ -67,6 +67,9 @@ class Investigation(IdMixin, TimestampMixin, WorkspaceScoped, Base):
     failed_steps: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
     plan: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     error: Mapped[str | None] = mapped_column(Text)
+    # Per-stage wall-clock milliseconds of the last run (plan_llm, knowledge_retrieval, read_tools,
+    # analysis_llm, report, total). Stages that did not run are absent.
+    timings_ms: Mapped[dict[str, float] | None] = mapped_column(JSONB)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
