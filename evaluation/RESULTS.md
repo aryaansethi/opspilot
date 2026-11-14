@@ -31,19 +31,19 @@ Recall@5 by question kind:
 
 ## Grounded answers
 
-LLM `opspilot-qwen3-8b`, 70 questions, run 2026-11-14 06:49 UTC.
+LLM `opspilot-qwen3-8b`, 70 questions, run 2026-11-14 17:26 UTC.
 
 | Metric | Value |
 |---|---|
+| abstention_accuracy | 0.986 |
+| unanswerable_abstention_rate | 1.000 |
+| citation_precision | 0.736 |
+| citation_coverage | 0.982 |
+| expected_fact_match | 0.800 |
+| latency_p50_ms | 25026.4 |
+| latency_p95_ms | 47912.1 |
 | questions | 70 |
 | model_errors | 0 |
-| latency_p50_ms | 22708.9 |
-| latency_p95_ms | 46636.9 |
-| citation_coverage | 0.982 |
-| citation_precision | 0.726 |
-| abstention_accuracy | 0.986 |
-| expected_fact_match | 0.800 |
-| unanswerable_abstention_rate | 1.000 |
 
 - Retrieval is hybrid RRF (config C); answers come from the local LLM with citation validation.
 - abstention_accuracy: answers answerable questions and abstains on unanswerable ones.
