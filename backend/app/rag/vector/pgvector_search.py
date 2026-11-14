@@ -28,7 +28,11 @@ async def vector_search(
         # never compare vectors from different embedding models
         .where(DocumentChunk.embedding_model == embedding_model)
     )
-    q = apply_filters(q, workspace_id, filters).order_by(distance).limit(limit)
+    q = (
+        apply_filters(q, workspace_id, filters)
+        .order_by(distance, DocumentChunk.content_hash)  # content tie-break: reproducible
+        .limit(limit)
+    )
     out = []
     for i, (chunk, doc, dist) in enumerate((await db.execute(q)).all(), start=1):
         c = to_candidate(chunk, doc)

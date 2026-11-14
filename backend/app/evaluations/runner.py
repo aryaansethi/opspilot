@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -42,6 +42,8 @@ from app.rag.pipeline import Mode, hybrid_search
 from app.rag.reranking.reranker import CrossEncoderReranker, Reranker
 
 DATASET_NAME = "opspilot-synthetic"
+_EVAL_USER_EMAIL = "evaluation@opspilot.local"
+_CORPUS_LOCK_KEY = 0x0F5_C0_4B  # arbitrary constant: one advisory lock for the evaluation corpus
 EVAL_WORKSPACE_SLUG = "opspilot-eval-v1"
 
 
@@ -94,23 +96,36 @@ def _source_type(name: str) -> str:
 async def ensure_eval_workspace(
     db: AsyncSession, ds: Dataset, embedder: EmbeddingProvider
 ) -> uuid.UUID:
-    """Create the isolated evaluation workspace and (re)index the corpus when it changed."""
+    """Create the isolated evaluation workspace and (re)index the corpus when it changed.
+
+    Safe with several workers: everything happens in ONE transaction that first takes a
+    Postgres advisory lock, so a second worker waits and then finds the corpus already indexed.
+    """
+    await db.commit()  # start a fresh transaction so the lock covers all reads below
+    await db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _CORPUS_LOCK_KEY})
     ws = await db.scalar(select(Workspace).where(Workspace.slug == EVAL_WORKSPACE_SLUG))
     if ws is None:
-        user = User(
-            email="evaluation@opspilot.local",
-            display_name="Evaluation",
-            password_hash=hash_password(secrets.token_urlsafe(32)),
-        )  # nobody can sign in as this user
+        user = await db.scalar(select(User).where(User.email == _EVAL_USER_EMAIL))
+        if user is None:
+            user = User(
+                email=_EVAL_USER_EMAIL,
+                display_name="Evaluation",
+                password_hash=hash_password(secrets.token_urlsafe(32)),
+            )  # nobody can sign in as this user
+            db.add(user)
         ws = Workspace(name="Evaluation (synthetic v1)", slug=EVAL_WORKSPACE_SLUG)
-        db.add_all([user, ws])
+        db.add(ws)
         await db.flush()
         db.add(WorkspaceMember(workspace_id=ws.id, user_id=user.id, role="owner"))
-        await db.commit()
-    existing = {
-        d.filename: d
-        for d in await db.scalars(select(Document).where(Document.workspace_id == ws.id))
-    }
+        await db.flush()
+    existing: dict[str, Document] = {}
+    for d in await db.scalars(
+        select(Document).where(Document.workspace_id == ws.id).order_by(Document.created_at)
+    ):
+        if d.filename in existing:  # self-heal duplicates left by an earlier concurrent run
+            await db.delete(d)
+        else:
+            existing[d.filename] = d
     changed = 0
     for name, data in ds.corpus.items():
         filename = f"{name}.md"
@@ -202,6 +217,28 @@ async def _start_run(
     return run
 
 
+async def _mark_failed(db: AsyncSession, run_id: uuid.UUID, exc: BaseException) -> EvaluationRun:
+    """Record a failure. Uses the id captured before the error: rollback expires ORM objects."""
+    await db.rollback()
+    run = await db.get(EvaluationRun, run_id)
+    assert run is not None
+    run.status, run.error = "failed", f"{type(exc).__name__}: {exc}"[:2000]
+    log.error("evaluation.failed", run_id=str(run_id), error=repr(exc), exc_info=exc)
+    return run
+
+
+async def mark_run_failed(run_id: uuid.UUID, exc: BaseException) -> None:
+    """Worker fallback when a run fails before or outside the runner's own error handling."""
+    from app.db.session import get_sessionmaker
+
+    async with get_sessionmaker()() as db:
+        run = await db.get(EvaluationRun, run_id)
+        if run is not None and run.status == "running":
+            run.status, run.error = "failed", f"{type(exc).__name__}: {exc}"[:2000]
+            run.finished_at = datetime.now(UTC)
+            await db.commit()
+
+
 def _ranked(results: list[Any], doc_names: dict[uuid.UUID, str]) -> list[Retrieved]:
     return [Retrieved(doc_names[c.document_id], c.section_path) for c in results]
 
@@ -239,6 +276,7 @@ async def run_retrieval(
         "chunk_overlap_tokens": s.chunk_overlap_tokens,
     }
     run = await _start_run(db, ds, "retrieval", cfg.label, config, split, requested_by, run_id)
+    current_run_id = run.id
     doc_names = {
         d.id: d.filename.removesuffix(".md")
         for d in await db.scalars(select(Document).where(Document.workspace_id == ws_id))
@@ -326,11 +364,7 @@ async def run_retrieval(
         }
         run.status = "completed"
     except Exception as e:
-        await db.rollback()
-        run = await db.get(EvaluationRun, run.id)  # type: ignore[assignment]
-        assert run is not None
-        run.status, run.error = "failed", f"{type(e).__name__}: {e}"[:2000]
-        log.error("evaluation.failed", run_id=str(run.id), error=repr(e))
+        run = await _mark_failed(db, current_run_id, e)
     run.finished_at = datetime.now(UTC)
     await db.commit()
     return run
@@ -362,6 +396,7 @@ async def run_answers(
     run = await _start_run(
         db, ds, "answers", "answers_hybrid_rrf", config, split, requested_by, run_id
     )
+    current_run_id = run.id
     doc_names = {
         d.id: d.filename.removesuffix(".md")
         for d in await db.scalars(select(Document).where(Document.workspace_id == ws_id))
@@ -456,10 +491,7 @@ async def run_answers(
         }
         run.status = "completed"
     except Exception as e:
-        await db.rollback()
-        run = await db.get(EvaluationRun, run.id)  # type: ignore[assignment]
-        assert run is not None
-        run.status, run.error = "failed", f"{type(e).__name__}: {e}"[:2000]
+        run = await _mark_failed(db, current_run_id, e)
     run.finished_at = datetime.now(UTC)
     await db.commit()
     return run

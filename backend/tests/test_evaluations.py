@@ -112,3 +112,101 @@ async def test_api_queues_and_reports_runs(client: AsyncClient) -> None:
     assert (
         len(await storage.receive("opspilot-evaluate-test", wait_seconds=1, max_messages=10)) == 4
     )
+
+
+async def test_concurrent_workers_index_the_corpus_once() -> None:
+    """Two workers starting evaluations at the same time must not duplicate the corpus."""
+    import asyncio
+
+    from sqlalchemy import func, select
+
+    from app.evaluations.runner import ensure_eval_workspace
+    from app.models import Document
+
+    ds = load_dataset()
+
+    async def one() -> uuid.UUID:
+        async with get_sessionmaker()() as db:
+            return await ensure_eval_workspace(db, ds, HashingEmbeddings())
+
+    a, b = await asyncio.gather(one(), one())
+    assert a == b
+    async with get_sessionmaker()() as db:
+        n = await db.scalar(
+            select(func.count()).select_from(Document).where(Document.workspace_id == a)
+        )
+    assert n == 24
+
+
+async def test_duplicate_corpus_documents_are_removed() -> None:
+    from sqlalchemy import func, select
+
+    from app.evaluations.runner import ensure_eval_workspace
+    from app.models import Document
+
+    ds = load_dataset()
+    async with get_sessionmaker()() as db:
+        ws = await ensure_eval_workspace(db, ds, HashingEmbeddings())
+        first = await db.scalar(select(Document).where(Document.workspace_id == ws).limit(1))
+        assert first is not None
+        db.add(
+            Document(
+                workspace_id=ws,
+                title=first.title,
+                filename=first.filename,
+                source_type=first.source_type,
+                s3_key="eval://dup",
+                mime_type="text/markdown",
+                size_bytes=1,
+                status="indexed",
+            )
+        )
+        await db.commit()
+        await ensure_eval_workspace(db, ds, HashingEmbeddings())
+        n = await db.scalar(
+            select(func.count()).select_from(Document).where(Document.workspace_id == ws)
+        )
+    assert n == 24
+
+
+class FailingEmbeddings(HashingEmbeddings):
+    def __init__(self, fail_after: int) -> None:
+        super().__init__()
+        self.calls, self.fail_after = 0, fail_after
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        self.calls += 1
+        if self.calls > self.fail_after:
+            raise RuntimeError("embedding service unavailable")
+        return await super().embed(texts)
+
+
+async def test_failure_inside_a_run_marks_it_failed() -> None:
+    async with get_sessionmaker()() as db:
+        await run_retrieval(
+            db, RETRIEVAL_CONFIGS["A_lexical"], embedder=HashingEmbeddings()
+        )  # index corpus
+        run = await run_retrieval(
+            db, RETRIEVAL_CONFIGS["B_vector"], embedder=FailingEmbeddings(fail_after=0)
+        )
+    assert run.status == "failed" and "embedding service unavailable" in (run.error or "")
+    assert run.finished_at is not None
+
+
+async def test_worker_marks_run_failed_when_it_fails_before_starting(
+    client: AsyncClient, monkeypatch: Any
+) -> None:
+    """Fails during corpus indexing (before the runner's own error handling): the worker records it."""
+    from app import worker
+
+    u = await register(client)
+    r = await client.post(
+        f"{API}/evaluations/run", headers=ws_headers(u), json={"config_label": "C_hybrid_rrf"}
+    )
+    run_id = r.json()["id"]
+    monkeypatch.setattr(worker, "get_embedding_provider", lambda: FailingEmbeddings(fail_after=0))
+    await worker.handle_evaluation(
+        {"run_id": run_id, "config_label": "C_hybrid_rrf", "split": "test"}
+    )  # must not raise
+    detail = (await client.get(f"{API}/evaluations/runs/{run_id}", headers=ws_headers(u))).json()
+    assert detail["status"] == "failed" and "embedding service unavailable" in detail["error"]

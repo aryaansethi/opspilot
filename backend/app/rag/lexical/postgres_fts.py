@@ -58,7 +58,13 @@ async def lexical_search(
         .join(Document, Document.id == DocumentChunk.document_id)
         .where(DocumentChunk.tsv.op("@@")(tsq))
     )
-    q = apply_filters(q, workspace_id, filters).order_by(rank.desc(), DocumentChunk.id).limit(limit)
+    # Ties are common with ts_rank_cd. Break them by content, not by random UUIDs, so the same
+    # corpus ranks identically in every database (reproducible evaluation).
+    q = (
+        apply_filters(q, workspace_id, filters)
+        .order_by(rank.desc(), DocumentChunk.content_hash, DocumentChunk.chunk_index)
+        .limit(limit)
+    )
     out = []
     for i, (chunk, doc, score) in enumerate((await db.execute(q)).all(), start=1):
         c = to_candidate(chunk, doc)

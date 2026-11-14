@@ -18,7 +18,7 @@ from app.core.logging import configure_logging, log
 from app.db.session import dispose_engine, get_sessionmaker
 from app.documents import storage
 from app.documents.ingestion import ingest_document
-from app.evaluations.runner import RETRIEVAL_CONFIGS, run_answers, run_retrieval
+from app.evaluations.runner import RETRIEVAL_CONFIGS, mark_run_failed, run_answers, run_retrieval
 from app.investigations.engine import run_investigation
 from app.rag.embeddings.provider import get_embedding_provider
 from app.rag.generation.llm import get_llm
@@ -45,7 +45,17 @@ async def handle_investigation(body: dict[str, Any]) -> None:
 
 
 async def handle_evaluation(body: dict[str, Any]) -> None:
+    """Never leaves a run in "running": any failure is recorded on the run and the message is
+    acknowledged (an evaluation retried hours later would be confusing, not helpful)."""
     run_id = uuid.UUID(str(body["run_id"]))
+    try:
+        await _run_evaluation(body, run_id)
+    except Exception as e:  # noqa: BLE001
+        log.error("worker.evaluation_failed", run_id=str(run_id), error=repr(e), exc_info=e)
+        await mark_run_failed(run_id, e)
+
+
+async def _run_evaluation(body: dict[str, Any], run_id: uuid.UUID) -> None:
     label = str(body["config_label"])
     split = str(body.get("split", "test"))
     async with get_sessionmaker()() as db:
@@ -90,6 +100,7 @@ async def consume(
                     queue=queue,
                     error=repr(e),
                     message_id=msg.get("MessageId"),
+                    exc_info=e,
                 )
 
 

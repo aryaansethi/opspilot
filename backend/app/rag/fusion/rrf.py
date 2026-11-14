@@ -23,7 +23,11 @@ def reciprocal_rank_fusion(
         else:
             existing.vector_rank, existing.vector_distance = c.vector_rank, c.vector_distance
             existing.rrf_score += 1.0 / (k + (c.vector_rank or 0))
-    return sorted(merged.values(), key=lambda c: (-c.rrf_score, str(c.chunk_id)))
+    # Equal scores are ordered by content, never by random ids, so rankings reproduce across DBs.
+    return sorted(
+        merged.values(),
+        key=lambda c: (-c.rrf_score, c.document_title, c.char_start, c.content),
+    )
 
 
 def dedupe_overlapping(candidates: list[Candidate], min_overlap: float = 0.5) -> list[Candidate]:

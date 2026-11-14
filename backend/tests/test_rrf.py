@@ -50,3 +50,25 @@ def test_dedupe_drops_mostly_overlapping_chunks_of_same_doc() -> None:
     same_span_other_doc = cand("other", span=(0, 100), doc=other_doc)
     kept = dedupe_overlapping([first, overlap, neighbour, same_span_other_doc])
     assert [c.document_title for c in kept] == ["first", "neighbour", "other"]
+
+
+def test_rrf_ties_do_not_depend_on_random_ids() -> None:
+    """Same content, different chunk ids (e.g. two databases) → same order."""
+    import random
+
+    def build(seed: int) -> list[str]:
+        rnd = random.Random(seed)
+        lex = []
+        for i, name in enumerate(["beta", "alpha", "gamma"], start=1):
+            c = cand(name, lex=i)
+            c.chunk_id = uuid.UUID(int=rnd.getrandbits(128))
+            lex.append(c)
+        vec = []
+        for i, name in enumerate(["gamma", "alpha", "beta"], start=1):
+            c = cand(name, vec=i)
+            c.chunk_id = next(x.chunk_id for x in lex if x.document_title == name)
+            vec.append(c)
+        return [c.document_title for c in reciprocal_rank_fusion(lex, vec)]
+
+    # alpha (2,2) ties with beta (1,3) and gamma (3,1) on RRF score in some orders; order must be stable
+    assert build(1) == build(2) == build(3)

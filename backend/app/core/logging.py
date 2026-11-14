@@ -26,6 +26,7 @@ def configure_logging(level: str = "INFO", json: bool = True) -> None:
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso"),
             _redact,
+            structlog.processors.format_exc_info,  # tracebacks in JSON and console output
             renderer,
         ],
         wrapper_class=structlog.make_filtering_bound_logger(logging.getLevelName(level)),
