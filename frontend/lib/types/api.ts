@@ -392,6 +392,12 @@ export interface EvaluationRunDetail extends EvaluationRun {
   results: EvaluationQuestionResult[]
 }
 
+/** Which evaluation configs this backend can run (the reranker is an optional install). */
+export interface EvaluationCapabilities {
+  available_configs: string[]
+  unavailable: Record<string, string>
+}
+
 export interface RunEvaluationRequest {
   dataset_version?: string
   /** Omit to queue all four retrieval configs. */

@@ -27,6 +27,11 @@ export function useEvaluationRun(id: string) {
   })
 }
 
+export function useEvaluationCapabilities() {
+  const ws = useWorkspaceId()
+  return useQuery({ queryKey: ["ws", ws, "evaluations", "capabilities"], queryFn: () => api.evaluations.capabilities(), enabled: !!ws, staleTime: 5 * 60_000 })
+}
+
 export function useRunEvaluation() {
   const qc = useQueryClient()
   const ws = useWorkspaceId()

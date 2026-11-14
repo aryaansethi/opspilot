@@ -622,6 +622,10 @@ export const mockApi: ApiContract = {
       }, 4000)
       return clone(run)
     },
+    async capabilities() {
+      await delay()
+      return { available_configs: ["A_lexical", "B_vector", "C_hybrid_rrf", "D_hybrid_rrf_rerank", "answers_hybrid_rrf"], unavailable: {} }
+    },
     async runs() {
       await delay()
       return clone(db.runs)

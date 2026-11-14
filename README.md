@@ -206,15 +206,16 @@ All screenshots are from the real app running locally on the demo seed. More in
 
 ## Evaluation results (dataset v1, held-out test split)
 
-Retrieval over 70 held-out questions (56 answerable), measured by `evaluation/run.py` on 2026-11-14
-([report](evaluation/reports/20261114-061751-retrieval-test.md), [method](evaluation/README.md)):
+Retrieval over 70 held-out questions (56 answerable), measured by `make eval` on 2026-11-14 and
+reproduced exactly on a brand-new database ([report](evaluation/reports/20261114-075914-retrieval-test.md),
+[all metrics](evaluation/RESULTS.md), [method](evaluation/README.md)):
 
-| Config | Recall@5 | MRR | nDCG@10 | p50 latency |
-|---|---|---|---|---|
-| A: Postgres full-text (not BM25) | 0.786 | 0.692 | 0.713 | 4 ms |
-| B: vector (bge-m3) | 0.920 | 0.862 | 0.880 | 135 ms |
-| C: hybrid, RRF k=60 | 0.893 | 0.779 | 0.805 | 142 ms |
-| D: hybrid + cross-encoder rerank | 0.911 | 0.903 | 0.901 | 457 ms |
+| Config | Recall@5 | Recall@10 | MRR | nDCG@10 | p50 latency |
+|---|---|---|---|---|---|
+| A: Postgres full-text (not BM25) | 0.759 | 0.902 | 0.705 | 0.722 | 5 ms |
+| B: vector (bge-m3) | 0.920 | 0.964 | 0.862 | 0.880 | 136 ms |
+| C: hybrid, RRF k=60 | 0.902 | 0.946 | 0.805 | 0.822 | 144 ms |
+| D: hybrid + cross-encoder rerank | **0.911** | 0.955 | **0.903** | **0.901** | 464 ms |
 
 Grounded answers over the same 70 questions with the local `opspilot-qwen3-8b` model
 ([report](evaluation/reports/20261114-061903-answers-test.md)):
@@ -244,7 +245,10 @@ make eval-results    # rebuild RESULTS.md from stored runs without re-running
 ```
 
 Every run stores the dataset hash, configuration and per-question results in Postgres and
-`evaluation/reports/`; the Evaluations page in the app reads the same runs. Method, metric definitions
+`evaluation/reports/`; the Evaluations page in the app reads the same runs. Rankings break ties by content, not by
+random IDs, so a fresh database gives identical numbers. Config D needs the optional reranker:
+natively `uv sync --group rerank`, in Compose `INSTALL_RERANK=true docker compose --profile app up -d --build`
+(a ~2.1 GB image instead of ~0.5 GB; without it the app runs A–C and says why D is unavailable). Method, metric definitions
 and limitations: [evaluation/README.md](evaluation/README.md); latest numbers:
 [evaluation/RESULTS.md](evaluation/RESULTS.md).
 

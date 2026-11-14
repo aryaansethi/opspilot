@@ -40,7 +40,9 @@ services:
   # Ollama stays on the host (Metal GPU); containers reach it via host.docker.internal.
   api:
     profiles: ["app"]
-    build: {context: ., dockerfile: backend/Dockerfile}
+    # INSTALL_RERANK=true adds the optional cross-encoder (CPU PyTorch, ~2.1 GB image instead of ~0.5 GB);
+    # without it, evaluation config D is unavailable and the app says so.
+    build: {context: ., dockerfile: backend/Dockerfile, args: {INSTALL_RERANK: "${INSTALL_RERANK:-false}"}}
     image: opspilot-backend:dev
     environment: &app-env
       ENVIRONMENT: local

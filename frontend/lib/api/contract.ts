@@ -14,6 +14,7 @@ import type {
   DocStatus,
   EvaluationRun,
   RunEvaluationRequest,
+  EvaluationCapabilities,
   EvaluationRunDetail,
   Evidence,
   FeedbackRequest,
@@ -117,6 +118,7 @@ export interface ApiContract {
   }
   evaluations: {
     run(input: RunEvaluationRequest): Promise<EvaluationRun>
+    capabilities(): Promise<EvaluationCapabilities>
     runs(): Promise<EvaluationRun[]>
     get(id: UUID): Promise<EvaluationRunDetail>
   }

@@ -21,7 +21,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { errorMessage } from "@/lib/api/client"
-import { useEvaluationRuns, useRunEvaluation } from "@/lib/api/endpoints/evaluations"
+import { useEvaluationCapabilities, useEvaluationRuns, useRunEvaluation } from "@/lib/api/endpoints/evaluations"
 import { absoluteTime, formatMetric } from "@/lib/format"
 import { ANSWER_METRICS, configName, RETRIEVAL_LABELS, shortName } from "@/lib/evaluations"
 import type { EvaluationMetrics, EvaluationRun, EvaluationSplit } from "@/lib/types/api"
@@ -71,6 +71,10 @@ type RunChoice = "all_retrieval" | "answers_hybrid_rrf" | keyof typeof RETRIEVAL
 
 function RunDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const runEval = useRunEvaluation()
+  const caps = useEvaluationCapabilities()
+  const unavailable = caps.data?.unavailable ?? {}
+  const retrievalLabels = Object.keys(RETRIEVAL_LABELS).filter((k) => k !== "answers_hybrid_rrf")
+  const runnable = retrievalLabels.filter((k) => !(k in unavailable))
   const [what, setWhat] = useState<RunChoice>("all_retrieval")
   const [split, setSplit] = useState<EvaluationSplit>("test")
   const [limit, setLimit] = useState("")
@@ -87,7 +91,7 @@ function RunDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: bo
       },
       {
         onSuccess: () => {
-          toast.success(what === "all_retrieval" ? "Queued all four retrieval strategies" : `Started ${configName(what)}`)
+          toast.success(what === "all_retrieval" ? `Queued ${runnable.length} retrieval strategies` : `Started ${configName(what)}`)
           onOpenChange(false)
         },
         onError: (err) => toast.error(errorMessage(err)),
@@ -110,15 +114,17 @@ function RunDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: bo
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all_retrieval">All 4 retrieval strategies (~5–30 s each)</SelectItem>
-                {Object.entries(RETRIEVAL_LABELS)
-                  .filter(([k]) => k !== "answers_hybrid_rrf")
-                  .map(([k, v]) => (
-                    <SelectItem key={k} value={k}>
-                      {v} only
-                    </SelectItem>
-                  ))}
-                <SelectItem value="answers_hybrid_rrf">Answer quality (~1 min per question)</SelectItem>
+                <SelectItem value="all_retrieval">
+                  {runnable.length === retrievalLabels.length ? "All" : `All available (${runnable.length} of ${retrievalLabels.length})`} retrieval strategies (~5–30 s each)
+                </SelectItem>
+                {retrievalLabels.map((k) => (
+                  <SelectItem key={k} value={k} disabled={k in unavailable}>
+                    {configName(k)} only{k in unavailable ? ` — ${unavailable[k]}` : ""}
+                  </SelectItem>
+                ))}
+                <SelectItem value="answers_hybrid_rrf" disabled={"answers_hybrid_rrf" in unavailable}>
+                  Answer quality (~1 min per question)
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -135,6 +141,12 @@ function RunDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: bo
               </SelectContent>
             </Select>
           </div>
+          {Object.keys(unavailable).length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              {Object.keys(unavailable).map(configName).join(", ")} can&apos;t run here: {[...new Set(Object.values(unavailable))].join("; ")}. Rebuild the backend
+              with <code className="font-mono">INSTALL_RERANK=true</code> to enable it.
+            </p>
+          )}
           {answers && (
             <div className="grid gap-1.5">
               <Label htmlFor="ev-limit">Max questions (optional)</Label>

@@ -8,6 +8,7 @@ import type {
   Document,
   DocumentChunk,
   DocumentStatus,
+  EvaluationCapabilities,
   EvaluationRun,
   EvaluationRunDetail,
   Evidence,
@@ -117,6 +118,7 @@ export const httpApi: ApiContract = {
   evaluations: {
     run: (input) => request<EvaluationRun>("/evaluations/run", { method: "POST", body: input }),
     runs: () => request<EvaluationRun[]>("/evaluations/runs"),
+    capabilities: () => request<EvaluationCapabilities>("/evaluations/capabilities"),
     get: (id) => request<EvaluationRunDetail>(`/evaluations/runs/${id}`),
   },
   feedback: {
