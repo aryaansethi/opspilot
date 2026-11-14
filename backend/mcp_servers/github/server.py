@@ -71,12 +71,22 @@ def _client() -> httpx.AsyncClient:
     )
 
 
+NOT_CONFIGURED = (
+    "GitHub is not configured: set GITHUB_TOKEN and GITHUB_ALLOWED_REPOS in backend/.env "
+    "(read only by the GitHub MCP server). OpsPilot works without GitHub; investigations skip it."
+)
+
+
 def _check_repo(repository: str) -> str:
+    # The server starts without credentials so the rest of the stack runs on demo data;
+    # every tool call then fails fast with a clear message instead of a GitHub 401.
     allowed = {
         r.strip().lower()
         for r in os.environ.get("GITHUB_ALLOWED_REPOS", "").split(",")
         if r.strip()
     }
+    if not os.environ.get("GITHUB_TOKEN", "").strip() or not allowed:
+        raise ToolInputError(NOT_CONFIGURED)
     if repository.lower() not in allowed:
         raise ToolInputError(f"Repository '{repository}' is not allowlisted for this integration")
     return repository

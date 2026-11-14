@@ -198,3 +198,23 @@ async def test_empty_repository_is_not_an_error(monkeypatch: pytest.MonkeyPatch)
     async with connect() as c:
         r = await ok(c, "list_recent_commits", {"repository": "acme/empty"})
     assert r["commits"] == [] and "no commits" in r["note"]
+
+
+@pytest.mark.parametrize("missing", ["GITHUB_TOKEN", "GITHUB_ALLOWED_REPOS"])
+async def test_unconfigured_server_explains_instead_of_calling_github(
+    monkeypatch: pytest.MonkeyPatch, missing: str
+) -> None:
+    monkeypatch.delenv(missing)
+    async with connect() as c:
+        r = await c.call_tool("list_recent_commits", {"repository": REPO})
+    assert r.is_error and "GitHub is not configured" in r.content[0].text  # type: ignore[union-attr]
+    assert not seen  # no request reached GitHub
+
+
+def test_server_module_starts_without_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib
+
+    monkeypatch.delenv("GITHUB_TOKEN")
+    monkeypatch.delenv("GITHUB_ALLOWED_REPOS")
+    importlib.reload(gh)
+    assert gh.mcp is not None

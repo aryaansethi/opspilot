@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     access_token_ttl_minutes: int = 15
     refresh_token_ttl_days: int = 14
     refresh_cookie_name: str = "opspilot_refresh"
+    login_rate_limit_per_minute: int = 10
+    register_rate_limit_per_hour: int = 20
     cookie_secure: bool = False  # True in production (HTTPS)
 
     # --- AWS (LocalStack locally) ---

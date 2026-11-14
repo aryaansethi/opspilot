@@ -710,3 +710,31 @@ async def test_docs_only_run_is_flagged(client: AsyncClient) -> None:
     rep = (await client.get(f"{API}/investigations/{inv_id}/report", headers=u["h"])).json()
     assert rep["unknowns"][0].startswith("No live evidence")
     assert [h["status"] for h in rep["hypotheses"]] == ["proposed"]
+
+
+async def test_unconnected_sources_are_named_in_unknowns(client: AsyncClient) -> None:
+    u = await workspace(client, integrations=("cloudwatch",))
+    inv_id = await start(client, u["h"], service="orders-api", **window())
+    await run(inv_id, ScriptedLLM())
+    rep = (await client.get(f"{API}/investigations/{inv_id}/report", headers=u["h"])).json()
+    assert any("github integration is not connected" in x for x in rep["unknowns"])
+    assert not any("cloudwatch integration is not connected" in x for x in rep["unknowns"])
+
+
+async def test_unconfigured_github_server_makes_run_partial(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """GitHub connected in the workspace, but the MCP server has no token: explained, not a crash."""
+    from mcp_servers.github import server as real_github
+
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+
+    override_server("github", real_github.mcp)
+    u = await workspace(client)
+    inv_id = await start(client, u["h"], service="orders-api", **window())
+    assert await run(inv_id, ScriptedLLM()) == "PARTIAL"
+    inv = (await client.get(f"{API}/investigations/{inv_id}", headers=u["h"])).json()
+    assert any("GitHub is not configured" in s for s in inv["failed_steps"])
+    assert (
+        await client.get(f"{API}/investigations/{inv_id}/report", headers=u["h"])
+    ).status_code == 200

@@ -3,7 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Response, status
+from fastapi import APIRouter, Cookie, Depends, Response, status
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 
@@ -11,6 +11,7 @@ from app.auth.deps import DB, CurrentUser
 from app.auth.schemas import LoginRequest, RegisterRequest, TokenResponse, UserOut
 from app.core.config import get_settings
 from app.core.errors import Conflict, Unauthorized
+from app.core.ratelimit import limit
 from app.core.security import (
     create_access_token,
     hash_password,
@@ -54,7 +55,15 @@ async def _issue(db: DB, response: Response, user: User) -> TokenResponse:
     )
 
 
-@router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
+_settings = get_settings()
+
+
+@router.post(
+    "/register",
+    response_model=TokenResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(limit("registration", _settings.register_rate_limit_per_hour, 3600))],
+)
 async def register(body: RegisterRequest, db: DB, response: Response) -> TokenResponse:
     user = User(
         email=body.email, password_hash=hash_password(body.password), display_name=body.display_name
@@ -71,7 +80,11 @@ async def register(body: RegisterRequest, db: DB, response: Response) -> TokenRe
     return await _issue(db, response, user)
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post(
+    "/login",
+    response_model=TokenResponse,
+    dependencies=[Depends(limit("login", _settings.login_rate_limit_per_minute, 60))],
+)
 async def login(body: LoginRequest, db: DB, response: Response) -> TokenResponse:
     user = await db.scalar(select(User).where(User.email == body.email))
     if not verify_password(body.password, user.password_hash if user else None) or user is None:

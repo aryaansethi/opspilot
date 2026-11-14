@@ -56,6 +56,13 @@ def _fake_embeddings() -> object:
 
 
 @pytest.fixture(autouse=True)
+def _reset_rate_limits() -> None:
+    from app.core import ratelimit
+
+    ratelimit.reset()
+
+
+@pytest.fixture(autouse=True)
 async def _clean_db() -> AsyncIterator[None]:
     yield
     tables = ", ".join(f'"{t.name}"' for t in reversed(Base.metadata.sorted_tables))

@@ -3,6 +3,7 @@
 #   worker:          python -m app.worker
 #   mcp-cloudwatch:  python -m mcp_servers.cloudwatch.server
 #   mcp-github:      python -m mcp_servers.github.server
+#   scripts:         python /app/scripts/<name>.py  (backend modules importable via PYTHONPATH=/app)
 # Build from the repository root (the evaluation dataset is copied in):
 #   docker build -f backend/Dockerfile -t opspilot-backend .
 
@@ -22,7 +23,9 @@ RUN useradd --create-home --uid 10001 opspilot
 WORKDIR /app
 COPY --from=build --chown=opspilot:opspilot /app /app
 COPY --chown=opspilot:opspilot evaluation/datasets /evaluation/datasets
-ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 ENVIRONMENT=production \
+# Seed/smoke scripts, e.g.: docker compose run --rm api python /app/scripts/seed_cloudwatch.py
+COPY --chown=opspilot:opspilot scripts /app/scripts
+ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1 PYTHONPATH=/app ENVIRONMENT=production \
     MCP_HOST=0.0.0.0 EVALUATION_DATASET_DIR=/evaluation/datasets/v1
 USER opspilot
 EXPOSE 8000

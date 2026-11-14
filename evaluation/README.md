@@ -59,11 +59,25 @@ Run with `--answers`; uses hybrid retrieval and the local LLM (`opspilot-qwen3-8
 
 ## Running
 
+One command reproduces the reported numbers and rewrites [RESULTS.md](RESULTS.md):
+
+```bash
+make eval            # retrieval A–D on the test split (~1 min) → RESULTS.md
+make eval-answers    # grounded answers with the local LLM (~30 min) → RESULTS.md
+make eval-results    # rebuild RESULTS.md from stored runs, no re-run
+```
+
+Underlying commands (from the repo root):
+
 ```bash
 uv run --project backend python evaluation/run.py --split tune      # choose settings here
 uv run --project backend python evaluation/run.py --split test      # report these
 uv run --project backend python evaluation/run.py --answers --split test
 ```
+
+Each run also writes a timestamped Markdown + JSON report to `reports/`. Prerequisites:
+`docker compose up -d --wait`, Ollama with `bge-m3` (and `opspilot-qwen3-8b` for answers), and
+`uv sync --group rerank` in `backend/` for configuration D.
 
 Runs can also be queued from the dashboard (`POST /api/v1/evaluations/run`).
 

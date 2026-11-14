@@ -176,6 +176,15 @@ async def _run(
     await emit(db, inv, "step_completed", {"step": "PLAN_INVESTIGATION", "plan": inv.plan})
 
     col = Collector(db=db, inv=inv, ctx=ctx, embedder=embedder, integrations=integrations)
+    # Say which live sources were not consulted, so a quiet report is not mistaken for "all clear".
+    for kind, what in (
+        ("cloudwatch", "logs, metrics and alarms"),
+        ("github", "recent code changes"),
+    ):
+        if kind not in integrations:
+            col.notes.append(
+                f"The {kind} integration is not connected, so {what} were not checked."
+            )
 
     # 4. knowledge base
     await set_state(db, inv, "RUN_KNOWLEDGE_RETRIEVAL")

@@ -14,13 +14,28 @@ from app.core.config import get_settings
 @lru_cache
 def _client(service: str, endpoint_url: str | None = None) -> Any:
     s = get_settings()
+    endpoint = endpoint_url or s.aws_endpoint_url
+    # LocalStack accepts the dummy keys from settings. Against real AWS (no endpoint
+    # override) boto3 uses its standard credential chain: env vars, AWS_PROFILE, SSO,
+    # or an instance/task role. Dummy keys are never sent to AWS.
+    creds: dict[str, str] = (
+        {
+            "aws_access_key_id": s.aws_access_key_id,
+            "aws_secret_access_key": s.aws_secret_access_key.get_secret_value(),
+        }
+        if endpoint
+        else {}
+    )
     return boto3.client(
         service,  # type: ignore[call-overload]
         region_name=s.aws_region,
-        endpoint_url=endpoint_url or s.aws_endpoint_url,
-        aws_access_key_id=s.aws_access_key_id,
-        aws_secret_access_key=s.aws_secret_access_key.get_secret_value(),
-        config=Config(signature_version="s3v4", retries={"max_attempts": 3}),
+        endpoint_url=endpoint,
+        config=Config(  # type: ignore[call-arg]  # stubs predate ignore_configured_endpoint_urls
+            signature_version="s3v4",
+            retries={"max_attempts": 3},
+            ignore_configured_endpoint_urls=True,  # the endpoint is decided by settings only
+        ),
+        **creds,
     )
 
 

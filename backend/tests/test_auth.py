@@ -78,3 +78,15 @@ async def test_logout_revokes_refresh_token(client: AsyncClient) -> None:
     assert (await client.post(f"{API}/auth/logout")).status_code == 204
     client.cookies.set("opspilot_refresh", token, path="/api/v1/auth")
     assert (await client.post(f"{API}/auth/refresh")).status_code == 401
+
+
+async def test_login_is_rate_limited_per_ip(client: AsyncClient) -> None:
+    await register(client)
+    body = {"email": "alice@example.com", "password": "wrong-password!!"}
+    codes = [(await client.post(f"{API}/auth/login", json=body)).status_code for _ in range(11)]
+    assert codes[:10] == [401] * 10 and codes[10] == 429
+    r = await client.post(f"{API}/auth/login", json=body)
+    assert (
+        r.json()["error"]["code"] == "rate_limited"
+        and r.json()["error"]["details"]["retry_after_seconds"] > 0
+    )

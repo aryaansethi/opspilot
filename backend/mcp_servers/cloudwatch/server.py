@@ -48,8 +48,21 @@ def _allow(var: str) -> set[str]:
 
 @lru_cache
 def _client(service: str) -> Any:
+    """CloudWatch target, from the most specific setting:
+
+    CW_AWS_ENDPOINT_URL   overrides AWS_ENDPOINT_URL for this server only; set it EMPTY to read
+                          real CloudWatch while S3/SQS stay on LocalStack. Default: LocalStack.
+    CW_AWS_REGION         overrides AWS_REGION.
+    CW_AWS_PROFILE        named AWS profile (takes precedence over AWS_ACCESS_KEY_ID/SECRET).
+    """
+    endpoint = os.environ.get(
+        "CW_AWS_ENDPOINT_URL", os.environ.get("AWS_ENDPOINT_URL", "http://localhost:4566")
+    )
     return aws_client(
-        service, endpoint_url=os.environ.get("AWS_ENDPOINT_URL", "http://localhost:4566")
+        service,
+        endpoint_url=endpoint,
+        region=os.environ.get("CW_AWS_REGION") or None,
+        profile=os.environ.get("CW_AWS_PROFILE") or None,
     )
 
 
