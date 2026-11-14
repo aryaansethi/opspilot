@@ -11,6 +11,13 @@ from typing import Any, Protocol
 from app.rag.types import Candidate
 
 
+def rerank_available() -> bool:
+    """True when the optional cross-encoder dependency group is installed."""
+    import importlib.util
+
+    return importlib.util.find_spec("sentence_transformers") is not None
+
+
 class Reranker(Protocol):
     name: str
 

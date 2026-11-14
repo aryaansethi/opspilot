@@ -14,6 +14,7 @@ from app.core.errors import AppError, Forbidden, NotFound
 from app.documents import storage
 from app.evaluations.runner import DATASET_NAME, RETRIEVAL_CONFIGS, load_dataset
 from app.models import EvaluationResult, EvaluationRun
+from app.rag.reranking.reranker import rerank_available
 
 router = APIRouter(prefix="/evaluations", tags=["evaluations"])
 ANSWERS_LABEL = "answers_hybrid_rrf"
@@ -86,6 +87,14 @@ async def start_run(body: RunRequest, db: DB, ctx: Workspace) -> RunOut:
     if body.dataset_version and body.dataset_version != ds.version:
         raise AppError(f"Only dataset {ds.version} is available")
     labels = [body.config_label] if body.config_label else list(RETRIEVAL_CONFIGS)
+    if not rerank_available():
+        rerank_labels = [label for label, cfg in RETRIEVAL_CONFIGS.items() if cfg.rerank]
+        if body.config_label in rerank_labels:
+            raise AppError(
+                f"{body.config_label} needs the optional reranker, which is not installed here "
+                "(backend: `uv sync --group rerank`; Docker: build with INSTALL_RERANK=true)"
+            )
+        labels = [label for label in labels if label not in rerank_labels]  # "run all" skips it
     for label in labels:
         if label not in RETRIEVAL_CONFIGS and label != ANSWERS_LABEL:
             raise AppError(
@@ -119,6 +128,29 @@ async def start_run(body: RunRequest, db: DB, ctx: Workspace) -> RunOut:
             },
         )
     return _out(runs[0])
+
+
+class CapabilitiesOut(BaseModel):
+    available_configs: list[str]
+    unavailable: dict[str, str]
+
+
+@router.get("/capabilities", response_model=CapabilitiesOut)
+async def capabilities(ctx: Workspace) -> CapabilitiesOut:
+    """Which configurations this deployment can run (the reranker is an optional install)."""
+    unavailable = (
+        {}
+        if rerank_available()
+        else {
+            label: "optional reranker not installed"
+            for label, c in RETRIEVAL_CONFIGS.items()
+            if c.rerank
+        }
+    )
+    return CapabilitiesOut(
+        available_configs=[x for x in [*RETRIEVAL_CONFIGS, ANSWERS_LABEL] if x not in unavailable],
+        unavailable=unavailable,
+    )
 
 
 @router.get("/runs", response_model=list[RunOut])

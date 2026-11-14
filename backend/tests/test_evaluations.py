@@ -210,3 +210,30 @@ async def test_worker_marks_run_failed_when_it_fails_before_starting(
     )  # must not raise
     detail = (await client.get(f"{API}/evaluations/runs/{run_id}", headers=ws_headers(u))).json()
     assert detail["status"] == "failed" and "embedding service unavailable" in detail["error"]
+
+
+async def test_rerank_config_is_skipped_or_refused_when_not_installed(
+    client: AsyncClient, monkeypatch: Any
+) -> None:
+    from app.evaluations import router as eval_router
+
+    monkeypatch.setattr(eval_router, "rerank_available", lambda: False)
+    url = storage.sqs().get_queue_url(QueueName="opspilot-evaluate-test")["QueueUrl"]
+    storage.sqs().purge_queue(QueueUrl=url)  # messages left by earlier tests
+    u = await register(client)
+    h = ws_headers(u)
+    caps = (await client.get(f"{API}/evaluations/capabilities", headers=h)).json()
+    assert (
+        "D_hybrid_rrf_rerank" in caps["unavailable"]
+        and "D_hybrid_rrf_rerank" not in caps["available_configs"]
+    )
+    only_d = await client.post(
+        f"{API}/evaluations/run", headers=h, json={"config_label": "D_hybrid_rrf_rerank"}
+    )
+    assert only_d.status_code == 400 and "INSTALL_RERANK" in only_d.json()["error"]["message"]
+    assert (await client.post(f"{API}/evaluations/run", headers=h, json={})).status_code == 202
+    labels = sorted(
+        json.loads(m["Body"])["config_label"]
+        for m in await storage.receive("opspilot-evaluate-test", wait_seconds=1, max_messages=10)
+    )
+    assert labels == ["A_lexical", "B_vector", "C_hybrid_rrf"]
