@@ -9,7 +9,10 @@ import { qk } from "@/lib/api/endpoints/keys"
 import { useWorkspaceId } from "@/lib/auth/auth-provider"
 import type { InvestigationEvent, InvestigationEventType } from "@/lib/types/api"
 
-export type StreamStatus = "connecting" | "open" | "reconnecting" | "closed"
+export type StreamStatus = "connecting" | "open" | "reconnecting" | "closed" | "replayed"
+
+/** live: follow new events; replay: fetch the history once and close (finished investigations). */
+export type StreamMode = "live" | "replay"
 
 const PART_FOR_EVENT: Partial<Record<InvestigationEventType, string[]>> = {
   tool_call_started: ["tool-calls"],
@@ -51,8 +54,12 @@ export function parseSseFrame(frame: string): InvestigationEvent | null {
 /**
  * Streams GET /investigations/{id}/events with fetch + ReadableStream (EventSource can't send
  * an Authorization header). Reconnects with Last-Event-ID and keeps TanStack Query caches fresh.
+ *
+ * The backend caps open streams per user, so finished investigations are fetched in replay mode
+ * (`?follow=false`): the history arrives once and the connection closes. Pass `undefined` until
+ * the investigation's state is known, so no stream is opened only to be replaced.
  */
-export function useInvestigationEvents(investigationId: string) {
+export function useInvestigationEvents(investigationId: string, mode: StreamMode | undefined = "live") {
   const qc = useQueryClient()
   const ws = useWorkspaceId()
   const [events, setEvents] = useState<InvestigationEvent[]>([])
@@ -60,7 +67,7 @@ export function useInvestigationEvents(investigationId: string) {
   const lastSeq = useRef(0)
 
   useEffect(() => {
-    if (!ws) return
+    if (!ws || !mode) return
     lastSeq.current = 0
     setEvents([])
 
@@ -91,7 +98,7 @@ export function useInvestigationEvents(investigationId: string) {
       while (!controller.signal.aborted) {
         try {
           setStatus(attempt === 0 ? "connecting" : "reconnecting")
-          const res = await fetch(`${API_BASE_URL}/investigations/${investigationId}/events`, {
+          const res = await fetch(`${API_BASE_URL}/investigations/${investigationId}/events${mode === "replay" ? "?follow=false" : ""}`, {
             headers: {
               Accept: "text/event-stream",
               ...authHeaders(),
@@ -118,6 +125,10 @@ export function useInvestigationEvents(investigationId: string) {
               if (ev) handle(ev)
             }
           }
+          if (mode === "replay") {
+            setStatus("replayed")
+            return
+          }
         } catch (err) {
           if (controller.signal.aborted) return
           void err
@@ -134,7 +145,7 @@ export function useInvestigationEvents(investigationId: string) {
       controller.abort()
       setStatus("closed")
     }
-  }, [investigationId, ws, qc])
+  }, [investigationId, ws, qc, mode])
 
   return { events, status }
 }

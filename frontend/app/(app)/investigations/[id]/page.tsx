@@ -3,7 +3,7 @@
 import { AlertTriangle, ExternalLink, FileText, Lightbulb, Radio, SquareKanban, XCircle } from "lucide-react"
 import Link from "next/link"
 import { use, useMemo, useState } from "react"
-import { InvestigationStateBadge, isRunning, sourceMeta } from "@/components/common/badges"
+import { InvestigationStateBadge, isRunning, sourceMeta, TERMINAL_STATES } from "@/components/common/badges"
 import { EmptyState } from "@/components/common/empty-state"
 import { ErrorState } from "@/components/common/error-state"
 import { RelativeTime } from "@/components/common/relative-time"
@@ -50,7 +50,9 @@ export default function InvestigationPage({ params }: { params: Promise<{ id: st
   const tools = useToolCalls(id)
   const approvals = useInvestigationApprovals(id)
   const report = useReport(id)
-  const { events, status: streamStatus } = useInvestigationEvents(id)
+  // Follow live while the investigation runs; once it's finished, replay its history once and close.
+  const streamMode = inv.data ? (TERMINAL_STATES.includes(inv.data.state) ? "replay" : "live") : undefined
+  const { events, status: streamStatus } = useInvestigationEvents(id, streamMode)
   const [tab, setTab] = useState("evidence")
   const [sourceFilter, setSourceFilter] = useState<SourceSystem | "all">("all")
   const [highlight, setHighlight] = useState<string | null>(null)
@@ -117,7 +119,7 @@ export default function InvestigationPage({ params }: { params: Promise<{ id: st
               <div className="flex items-center justify-between gap-2">
                 <InvestigationStateBadge state={i.state} />
                 <span className={cn("flex items-center gap-1 text-[11px]", streamStatus === "open" ? "text-success" : "text-muted-foreground")} title="Live updates">
-                  <Radio className="size-3" aria-hidden /> {streamStatus === "open" ? "Live" : streamStatus}
+                  <Radio className="size-3" aria-hidden /> {streamStatus === "open" ? "Live" : streamStatus === "replayed" ? "Finished" : streamStatus}
                 </span>
               </div>
               <p className="text-sm font-medium leading-snug">{i.question}</p>

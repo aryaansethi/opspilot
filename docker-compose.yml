@@ -55,6 +55,8 @@ services:
       CORS_ORIGINS: '["http://localhost:3000"]'
     command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
     ports: ["8080:8000"]   # 8000 is left free for a locally run API
+    # Reranker model (~1 GB, INSTALL_RERANK=true only) is downloaded once and kept here.
+    volumes: ["hf-cache:/home/opspilot/.cache/huggingface"]
     depends_on:
       postgres: {condition: service_healthy}
       localstack: {condition: service_healthy}
@@ -65,6 +67,7 @@ services:
     image: opspilot-backend:dev
     environment: *app-env
     command: ["python", "-m", "app.worker"]
+    volumes: ["hf-cache:/home/opspilot/.cache/huggingface"]
     healthcheck: {disable: true}
     depends_on: [api]
     extra_hosts: ["host.docker.internal:host-gateway"]
@@ -130,3 +133,4 @@ services:
 
 volumes:
   pgdata:
+  hf-cache:

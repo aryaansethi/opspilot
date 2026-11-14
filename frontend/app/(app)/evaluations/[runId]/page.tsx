@@ -171,29 +171,38 @@ export default function EvaluationRunPage({ params }: { params: Promise<{ runId:
                   {m.answerable_questions !== undefined && ` · ${m.answerable_questions} answerable`}
                   {m.model_errors !== undefined && ` · ${m.model_errors} model errors`}
                   {m.cases !== undefined && ` · ${m.cases} cases`}
-                  {answers && (m.faithfulness != null ? ` · faithfulness judged by ${m.faithfulness_judge ?? "an LLM"} over ${m.claims_judged ?? "?"} claims` : " · faithfulness not measured")}
+                  {answers && (m.faithfulness != null ? ` · faithfulness judged by ${m.faithfulness_judge ?? (r.config as { faithfulness_judge?: string }).faithfulness_judge ?? "an LLM"} over ${m.claims_judged ?? "?"} claims` : " · faithfulness not measured")}
                 </p>
-                {byKind.length > 0 && (
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Question type</TableHead>
-                        <TableHead className="text-right">n</TableHead>
-                        <TableHead className="text-right">Recall@5</TableHead>
-                        <TableHead className="text-right">MRR</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {byKind.map(([k, b]) => (
-                        <TableRow key={k}>
-                          <TableCell className="capitalize">{k}</TableCell>
-                          <TableCell className="text-right font-mono text-xs">{b?.n}</TableCell>
-                          <TableCell className="text-right font-mono text-xs">{formatMetric(b?.recall_at_5)}</TableCell>
-                          <TableCell className="text-right font-mono text-xs">{formatMetric(b?.mrr)}</TableCell>
+                {(
+                  [
+                    ["Question type", byKind],
+                    ["Incident topic", Object.entries(m.by_topic ?? {})],
+                  ] as const
+                ).map(([title, rows]) =>
+                  rows.length > 0 ? (
+                    <Table key={title}>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>{title}</TableHead>
+                          <TableHead className="text-right">n</TableHead>
+                          <TableHead className="text-right">Recall@5</TableHead>
+                          <TableHead className="text-right">MRR</TableHead>
+                          <TableHead className="text-right">nDCG@10</TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {rows.map(([k, b]) => (
+                          <TableRow key={k}>
+                            <TableCell className="capitalize">{k}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">{b?.n}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">{formatMetric(b?.recall_at_5)}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">{formatMetric(b?.mrr)}</TableCell>
+                            <TableCell className="text-right font-mono text-xs">{formatMetric(b?.ndcg_at_10)}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  ) : null,
                 )}
               </>
             )}

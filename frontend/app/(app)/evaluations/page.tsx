@@ -201,6 +201,56 @@ function RunDialog({ open, onOpenChange, versions }: { open: boolean; onOpenChan
   )
 }
 
+const BREAKDOWN_ORDER = ["lexical", "semantic", "multi", "ambiguous", "unanswerable", "error", "latency", "database", "deployment", "other"]
+
+/** Per-group Recall@5 · MRR for each strategy; groups come from the data (v1 and v2 differ). */
+function BreakdownCard({ runs, field, title, description }: { runs: EvaluationRun[]; field: "by_kind" | "by_topic"; title: string; description: string }) {
+  const groups = [...new Set(runs.flatMap((r) => Object.keys(r.metrics?.[field] ?? {})))].sort(
+    (a, b) => (BREAKDOWN_ORDER.indexOf(a) + 1 || 99) - (BREAKDOWN_ORDER.indexOf(b) + 1 || 99) || a.localeCompare(b),
+  )
+  if (!groups.length) return null
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Strategy</TableHead>
+              {groups.map((g) => (
+                <TableHead key={g} className="text-right capitalize">
+                  {g} <span className="font-normal text-muted-foreground normal-case">(n={runs.find((r) => r.metrics?.[field]?.[g])?.metrics?.[field]?.[g]?.n})</span>
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {runs.map((r) => (
+              <TableRow key={r.id}>
+                <TableCell className="font-medium whitespace-nowrap">{configName(r.config_label)}</TableCell>
+                {groups.map((g) => {
+                  const b = r.metrics?.[field]?.[g]
+                  return (
+                    <TableCell key={g} className="text-right font-mono text-xs whitespace-nowrap tabular-nums">
+                      {b ? `${formatMetric(b.recall_at_5)} · ${formatMetric(b.mrr)}` : "—"}
+                    </TableCell>
+                  )
+                })}
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  )
+}
+
+/** The judge model is recorded in the run config (and, on some runs, in metrics). */
+const judgeOf = (r: EvaluationRun) => (r.metrics?.faithfulness_judge ?? (r.config as { faithfulness_judge?: string }).faithfulness_judge) || undefined
+
 function MetricCard({ title, description, run, defs }: { title: string; description: string; run: EvaluationRun; defs: MetricDef[] }) {
   return (
     <Card>
@@ -222,6 +272,13 @@ function MetricCard({ title, description, run, defs }: { title: string; descript
               </div>
             ))}
           </dl>
+        )}
+        {run.metrics?.by_set && (
+          <p className="font-mono text-[11px] text-muted-foreground">
+            {Object.entries(run.metrics.by_set)
+              .map(([k, b]) => `${k}: ${formatMetric(b?.tool_selection_accuracy ?? b?.injection_resistance)} (${b?.cases ?? "?"} cases)`)
+              .join(" · ")}
+          </p>
         )}
         <p className="font-mono text-[11px] text-muted-foreground">
           {run.metrics?.cases ?? "?"} cases · dataset {run.dataset_version} ·{" "}
@@ -261,10 +318,6 @@ export default function EvaluationsPage() {
   const qualityData = QUALITY.map((m) => ({ metric: m.label, ...Object.fromEntries(cmp.runs.map((r, i) => [`c${i}`, (r.metrics?.[m.key] as number | undefined) ?? null])) }))
   const latencyConfig: ChartConfig = { p50: { label: "p50", color: "var(--chart-1)" }, p95: { label: "p95", color: "var(--chart-3)" } }
   const latencyData = cmp.runs.map((r) => ({ config: shortName(r.config_label), p50: r.metrics?.latency_p50_ms ?? null, p95: r.metrics?.latency_p95_ms ?? null }))
-  const KIND_ORDER = ["lexical", "semantic", "multi", "error", "latency", "database", "deployment", "ambiguous"]
-  const kinds = [...new Set(cmp.runs.flatMap((r) => Object.keys(r.metrics?.by_kind ?? {})))].sort(
-    (a, b) => (KIND_ORDER.indexOf(a) + 1 || 99) - (KIND_ORDER.indexOf(b) + 1 || 99) || a.localeCompare(b),
-  )
 
   const runButton = (
     <Button onClick={() => setDialog(true)}>
@@ -361,45 +414,13 @@ export default function EvaluationsPage() {
                 </Card>
               </div>
 
-              {kinds.length > 0 && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>By question type</CardTitle>
-                    <CardDescription>
-                      Lexical questions use exact terms (error codes, names); semantic ones describe symptoms; multi needs more than one section. Recall@5 · MRR.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="overflow-x-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Strategy</TableHead>
-                          {kinds.map((k) => (
-                            <TableHead key={k} className="text-right capitalize">
-                              {k} <span className="font-normal text-muted-foreground">(n={cmp.runs.find((r) => r.metrics?.by_kind?.[k])?.metrics?.by_kind?.[k]?.n})</span>
-                            </TableHead>
-                          ))}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {cmp.runs.map((r) => (
-                          <TableRow key={r.id}>
-                            <TableCell className="font-medium">{configName(r.config_label)}</TableCell>
-                            {kinds.map((k) => {
-                              const b = r.metrics?.by_kind?.[k]
-                              return (
-                                <TableCell key={k} className="text-right font-mono text-xs tabular-nums">
-                                  {b ? `${formatMetric(b.recall_at_5)} · ${formatMetric(b.mrr)}` : "—"}
-                                </TableCell>
-                              )
-                            })}
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
-              )}
+              <BreakdownCard
+                runs={cmp.runs}
+                field="by_kind"
+                title="By question type"
+                description="Lexical questions use exact terms (error codes, names); semantic ones describe symptoms; multi needs more than one section; ambiguous ones are underspecified. Recall@5 · MRR."
+              />
+              <BreakdownCard runs={cmp.runs} field="by_topic" title="By incident topic" description="The same runs grouped by what the question is about. Recall@5 · MRR." />
             </>
           ) : (
             <EmptyState icon={BarChart3} title={`No completed retrieval runs on the ${split} set`} description="Charts appear when at least one retrieval run on this question set has finished." />
@@ -446,7 +467,7 @@ export default function EvaluationsPage() {
                   <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
                     <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden />
                     {answersRun.metrics?.faithfulness != null
-                      ? `Faithfulness is judged per claim by ${answersRun.metrics.faithfulness_judge ?? "an LLM judge"} over ${answersRun.metrics.claims_judged ?? "?"} claims; a judge can be wrong, so treat it as an estimate.`
+                      ? `Faithfulness is judged per claim by ${judgeOf(answersRun) ?? "an LLM judge"} over ${answersRun.metrics.claims_judged ?? "?"} claims${answersRun.metrics.judge_errors ? ` (${answersRun.metrics.judge_errors} judge errors excluded)` : ""}; a judge can be wrong, so treat it as an estimate.`
                       : "Faithfulness isn't measured for this run."}{" "}
                     “Expected facts present” is a plain string check, not a judgement of correctness.
                   </p>

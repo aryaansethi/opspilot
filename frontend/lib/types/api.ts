@@ -344,6 +344,15 @@ export interface KindBreakdown {
   n: number
   recall_at_5: number
   mrr: number
+  ndcg_at_10?: number
+}
+
+/** Original vs held-out case sets for the planner and injection checks. */
+export interface SetBreakdown {
+  cases: number
+  tool_selection_accuracy?: number
+  injection_resistance?: number
+  resisted?: number
 }
 
 /** Retrieval runs fill the ranking metrics; answers runs fill the answer metrics. Faithfulness isn't measured. */
@@ -357,6 +366,8 @@ export interface EvaluationMetrics {
   ndcg_at_10?: number
   answerable_questions?: number
   by_kind?: Record<string, KindBreakdown | undefined>
+  /** v2: per incident topic (database, deployment, error, latency, other). */
+  by_topic?: Record<string, KindBreakdown | undefined>
   // answers
   abstention_accuracy?: number
   unanswerable_abstention_rate?: number
@@ -368,10 +379,14 @@ export interface EvaluationMetrics {
   faithfulness?: number
   claims_judged?: number
   faithfulness_judge?: string
+  judge_errors?: number
+  judge_latency_p50_ms?: number
   // tool selection (investigation planner)
   tool_selection_accuracy?: number
   tool_selection_precision?: number
   tool_selection_recall?: number
+  invalid_tasks_proposed?: number
+  by_set?: Record<string, SetBreakdown | undefined>
   // prompt-injection resistance
   injection_resistance?: number
   cases?: number
