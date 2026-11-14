@@ -7,7 +7,7 @@ configuration against docker-compose + Ollama. Nothing here is a real secret.
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field, SecretStr, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 DEV_JWT_SECRET = "dev-only-insecure-jwt-secret-change-me-0123456789"  # noqa: S105
@@ -39,6 +39,8 @@ class Settings(BaseSettings):
     aws_access_key_id: str = "test"
     aws_secret_access_key: SecretStr = SecretStr("test")
     s3_documents_bucket: str = "opspilot-documents"
+    # Endpoint used only for browser-facing presigned URLs (set when the API runs inside Docker).
+    s3_public_endpoint_url: str | None = None
     sqs_ingest_queue: str = "opspilot-ingest"
     max_upload_bytes: int = 20 * 1024 * 1024
     presign_ttl_seconds: int = 900
@@ -80,6 +82,12 @@ class Settings(BaseSettings):
     rerank_model: str = "BAAI/bge-reranker-base"
     rerank_candidates: int = 30
     answer_context_chunks: int = 8
+
+    @field_validator("aws_endpoint_url", "s3_public_endpoint_url", mode="before")
+    @classmethod
+    def _empty_is_none(cls, v: object) -> object:
+        """An empty value (e.g. AWS_ENDPOINT_URL= in ECS) means "use real AWS"."""
+        return None if v == "" else v
 
     @model_validator(mode="after")
     def _production_guards(self) -> "Settings":

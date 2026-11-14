@@ -1,0 +1,100 @@
+name: Backend
+
+on:
+  push:
+    branches: [main]
+    paths: ["backend/**", "evaluation/datasets/**", "scripts/**", "docker/**", ".github/workflows/backend.yml"]
+  pull_request:
+    paths: ["backend/**", "evaluation/datasets/**", "scripts/**", "docker/**", ".github/workflows/backend.yml"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint, type check, tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: backend
+
+    # Same images as docker-compose.yml. Tests use deterministic fake embeddings and a
+    # scripted fake LLM, so no model server (Ollama) and no secrets are needed.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: opspilot
+          POSTGRES_PASSWORD: opspilot
+          POSTGRES_DB: opspilot
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U opspilot -d opspilot"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+      localstack:
+        image: localstack/localstack:4.7
+        env:
+          SERVICES: s3,sqs,logs,cloudwatch
+          AWS_DEFAULT_REGION: us-east-1
+        ports: ["4566:4566"]
+        options: >-
+          --health-cmd "curl -sf http://localhost:4566/_localstack/health"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.7"
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install Python 3.12 and dependencies
+        run: |
+          uv python install 3.12
+          uv sync --frozen
+
+      - name: Create the test database and extensions
+        working-directory: .
+        env:
+          PGPASSWORD: opspilot
+        run: psql -h localhost -p 5433 -U opspilot -d opspilot -v ON_ERROR_STOP=1 -f docker/postgres-init.sql
+
+      - name: Ruff (lint + format)
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Mypy
+        run: uv run mypy app mcp_servers
+
+      - name: Migrations apply and match the models
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+          uv run alembic downgrade base
+          uv run alembic upgrade head
+
+      - name: Pytest
+        run: uv run pytest -q -p no:logging
+
+  image:
+    name: Docker image builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image (not pushed)
+        run: docker build -f backend/Dockerfile -t opspilot-backend:ci .
+      - name: Image refuses to start in production without real secrets
+        run: |
+          if docker run --rm opspilot-backend:ci python -c "import app.main" 2>err.txt; then
+            echo "expected a startup failure without JWT_SECRET"; exit 1
+          fi
+          grep -q "JWT_SECRET must be set in production" err.txt

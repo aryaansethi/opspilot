@@ -14,8 +14,8 @@ Runs **entirely locally at zero cost**: Docker Compose (Postgres + pgvector, Loc
 | 4. MCP: CloudWatch server + backend MCP layer | Done, tested |
 | 4b. MCP: GitHub server | Done, tested; live check against a real repository passed |
 | 5. Investigation workflow (state machine, SSE, approvals, audit) | Done, tested; live run on local model |
-| 6. Evaluation (dataset v1, retrieval A–D, answer checks, dashboard) | Retrieval done and reported; answer-quality run in progress |
-| 7. CI, containers, Terraform | In progress |
+| 6. Evaluation (dataset v1, retrieval A–D, answer checks, dashboard) | Done; results below. Human spot-check of 20 questions pending |
+| 7. CI, containers, Terraform | Done: GitHub Actions (backend, frontend, Terraform), Docker image + Compose `app` profile, Terraform validated. Not deployed (owner decision, see `infrastructure/README.md`) |
 | Frontend (Next.js) | Done: all screens on the real API (mock mode for previews) |
 
 ## Prerequisites
@@ -59,6 +59,14 @@ Smoke test the whole flow with the demo corpus (from the repo root):
 uv run --project backend python scripts/smoke_test.py --rerank
 ```
 
+## Run everything in containers
+
+```bash
+docker compose --profile app up -d --build     # API on http://localhost:8080 (+ worker, both MCP servers)
+```
+
+Ollama still runs on the host; only the GitHub MCP container reads `backend/.env` (it holds the token).
+
 ## Tests
 
 ```bash
@@ -80,6 +88,20 @@ Retrieval over 70 held-out questions (56 answerable), measured by `evaluation/ru
 | B: vector (bge-m3) | 0.920 | 0.862 | 0.880 | 135 ms |
 | C: hybrid, RRF k=60 | 0.893 | 0.779 | 0.805 | 142 ms |
 | D: hybrid + cross-encoder rerank | 0.911 | 0.903 | 0.901 | 457 ms |
+
+Grounded answers over the same 70 questions with the local `opspilot-qwen3-8b` model
+([report](evaluation/reports/20261114-061903-answers-test.md)):
+
+| Metric | Value |
+|---|---|
+| Abstention accuracy (answers when it can, says "not enough evidence" when it can't) | 0.986 |
+| Abstains on unanswerable questions | 1.000 |
+| Citation precision (cited chunks from an expected section) | 0.726 |
+| Citation coverage (answers with at least one correct citation) | 0.982 |
+| Expected-fact match (strict verbatim key phrases) | 0.800 |
+| Latency p50 / p95 | 22.7 s / 46.6 s |
+
+Faithfulness is not measured yet (no LLM judge or full human grading).
 
 What this shows: reranking gives the best ranking quality; plain equal-weight RRF is *worse* than
 vector-only here because the lexical side is weak on paraphrased and multi-section questions. RRF k

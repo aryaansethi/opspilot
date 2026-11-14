@@ -30,3 +30,8 @@ def test_production_rejects_dev_secret() -> None:
 def test_production_requires_secure_cookie() -> None:
     with pytest.raises(ValidationError, match="COOKIE_SECURE"):
         Settings(_env_file=None, environment="production", jwt_secret="x" * 48, cookie_secure=False)
+
+
+def test_empty_aws_endpoint_means_real_aws(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AWS_ENDPOINT_URL", "")
+    assert Settings(_env_file=None).aws_endpoint_url is None

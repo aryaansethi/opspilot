@@ -35,5 +35,59 @@ services:
       timeout: 5s
       retries: 30
 
+  # ---- application services (opt-in): docker compose --profile app up -d --build
+  # Ollama stays on the host (Metal GPU); containers reach it via host.docker.internal.
+  api:
+    profiles: ["app"]
+    build: {context: ., dockerfile: backend/Dockerfile}
+    image: opspilot-backend:dev
+    environment: &app-env
+      ENVIRONMENT: local
+      DATABASE_URL: postgresql+asyncpg://opspilot:opspilot@postgres:5432/opspilot
+      AWS_ENDPOINT_URL: http://localstack:4566
+      S3_PUBLIC_ENDPOINT_URL: http://localhost:4566
+      LLM_BASE_URL: http://host.docker.internal:11434/v1
+      MCP_CLOUDWATCH_URL: http://mcp-cloudwatch:8101/mcp
+      MCP_GITHUB_URL: http://mcp-github:8102/mcp
+      CORS_ORIGINS: '["http://localhost:3000"]'
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+    ports: ["8080:8000"]   # 8000 is left free for a locally run API
+    depends_on:
+      postgres: {condition: service_healthy}
+      localstack: {condition: service_healthy}
+    extra_hosts: ["host.docker.internal:host-gateway"]
+
+  worker:
+    profiles: ["app"]
+    image: opspilot-backend:dev
+    environment: *app-env
+    command: ["python", "-m", "app.worker"]
+    healthcheck: {disable: true}
+    depends_on: [api]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+
+  mcp-cloudwatch:
+    profiles: ["app"]
+    image: opspilot-backend:dev
+    environment:
+      <<: *app-env
+      MCP_PORT: "8101"
+      CW_ALLOWED_LOG_GROUPS: /ecs/orders-api
+      CW_ALLOWED_NAMESPACES: OpsPilot/OrdersApi
+    command: ["python", "-m", "mcp_servers.cloudwatch.server"]
+    healthcheck: {disable: true}
+    depends_on: [api]
+
+  mcp-github:
+    profiles: ["app"]
+    image: opspilot-backend:dev
+    # Only this service reads backend/.env: it holds GITHUB_TOKEN, which no other process may see.
+    env_file: [{path: backend/.env, required: false}]
+    environment:
+      MCP_PORT: "8102"
+    command: ["python", "-m", "mcp_servers.github.server"]
+    healthcheck: {disable: true}
+    depends_on: [api]
+
 volumes:
   pgdata:

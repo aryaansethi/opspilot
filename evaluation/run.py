@@ -29,6 +29,23 @@ COLS = [("recall_at_5", "Recall@5"), ("recall_at_10", "Recall@10"), ("precision_
         ("ndcg_at_5", "nDCG@5"), ("ndcg_at_10", "nDCG@10"), ("latency_p50_ms", "p50 ms"), ("latency_p95_ms", "p95 ms")]
 
 
+RETRIEVAL_NOTES = [
+    "Relevance is binary at section level; unanswerable questions are excluded from retrieval metrics.",
+    "Lexical retrieval is PostgreSQL full-text search (`ts_rank_cd`), not BM25.",
+    "Latency is measured in-process on this machine and includes query embedding (and reranking for D).",
+    "Synthetic corpus; small sample. These numbers do not predict production performance.",
+]
+ANSWER_NOTES = [
+    "Retrieval is hybrid RRF (config C); answers come from the local LLM with citation validation.",
+    "abstention_accuracy: answers answerable questions and abstains on unanswerable ones.",
+    "citation_precision / citation_coverage: cited chunks that are in an expected section / answers with at least one such citation (answered, answerable questions only).",
+    "expected_fact_match: every expected key phrase appears verbatim in the answer; it under-counts correct paraphrases.",
+    "Faithfulness is not measured (no LLM judge or full human grading yet).",
+    "Latency includes retrieval and local LLM generation on one laptop.",
+    "Synthetic corpus; small sample. These numbers do not predict production performance.",
+]
+
+
 def fmt(v: object) -> str:
     return f"{v:.3f}" if isinstance(v, float) and v <= 1 else str(v)
 
@@ -78,10 +95,10 @@ async def main() -> int:
             bk = (r.metrics or {}).get("by_kind", {})
             lines.append(f"| {r.config_label} | " + " | ".join(
                 f"{fmt(bk.get(k, {}).get('recall_at_5', 0.0))} (n={bk.get(k, {}).get('n', 0)})" for k in ("lexical", "semantic", "multi")) + " |")
-    lines += ["", "Notes:", "- Relevance is binary at section level; unanswerable questions are excluded from retrieval metrics.",
-              "- Lexical retrieval is PostgreSQL full-text search (`ts_rank_cd`), not BM25.",
-              "- Latency is measured in-process on this machine and includes query embedding (and reranking for D).",
-              "- Synthetic corpus; small sample. These numbers do not predict production performance."]
+    if args.answers:
+        lines += ["", "Notes:", *[f"- {n}" for n in ANSWER_NOTES]]
+    else:
+        lines += ["", "Notes:", *[f"- {n}" for n in RETRIEVAL_NOTES]]
     md = "\n".join(lines) + "\n"
     out = ROOT / "reports" / f"{stamp}-{kind}-{args.split}"
     out.with_suffix(".md").write_text(md)

@@ -21,7 +21,7 @@ from app.auth.deps import WorkspaceCtx
 from app.core.errors import AppError, Forbidden, NotFound
 from app.core.logging import log
 from app.mcp.catalog import check_arguments_against_workspace
-from app.mcp.connection import connect
+from app.mcp.connection import connect, server_urls
 from app.models import ConnectedIntegration, McpServer, ToolInvocation, ToolRegistryEntry
 
 _SECRET_KEY = re.compile(r"(token|secret|password|authorization|api_key|credential)", re.I)
@@ -159,7 +159,10 @@ async def invoke_tool(
     try:
         async with asyncio.timeout(timeout):
             async with connect(
-                server_name, entry.server.url, read_timeout_seconds=timeout
+                server_name,
+                # This process's configured address wins: the DB row is shared by every deployment.
+                server_urls().get(server_name, entry.server.url),
+                read_timeout_seconds=timeout,
             ) as client:
                 raw = await client.call_tool(tool_name, arguments)
     except TimeoutError:

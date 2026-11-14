@@ -1,0 +1,13 @@
+# Copy to terraform.tfvars (git-ignored) and fill in. Nothing here is a secret.
+image_tag             = "sha-abc1234"
+certificate_arn       = "arn:aws:acm:us-east-1:123456789012:certificate/replace-me"
+frontend_origins      = ["https://opspilot.example.com"]
+alert_emails          = ["you@example.com"]
+monthly_budget_usd    = 30
+llm_base_url          = "https://api.openai.com/v1"
+llm_model             = "replace-with-chosen-model"
+embedding_model       = "replace-with-chosen-embedding-model"
+embedding_dim         = 1024
+cloudwatch_log_groups = ["/ecs/orders-api"]
+cloudwatch_namespaces = ["OpsPilot/OrdersApi"]
+github_repositories   = ["owner/repo"]

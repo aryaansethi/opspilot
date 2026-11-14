@@ -191,3 +191,11 @@ async def test_delete_removes_rows_and_object(client: AsyncClient) -> None:
     assert (await client.get(f"{API}/documents/{doc_id}", headers=ws_headers(u))).status_code == 404
     key = f"ws/{u['workspace_id']}/docs/{doc_id}/runbook.md"
     assert await storage.head_object(key) is None
+
+
+async def test_presigned_url_can_use_public_endpoint(monkeypatch: Any) -> None:
+    from app.core.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "s3_public_endpoint_url", "http://public.example:4566")
+    url = await storage.presign_put("ws/x/docs/y/a.md", "text/markdown")
+    assert url.startswith("http://public.example:4566/")

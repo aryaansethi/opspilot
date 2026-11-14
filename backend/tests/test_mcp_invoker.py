@@ -211,3 +211,24 @@ async def test_github_connection_test_uses_configured_repo(client: AsyncClient) 
     assert tested["status"] == "connected"
     audit = (await client.get(f"{API}/tool-invocations", headers=u["h"])).json()
     assert audit[0]["arguments_redacted"] == {"repository": "acme/orders-api", "limit": 1}
+
+
+async def test_invoker_uses_this_processes_server_address(client: AsyncClient) -> None:
+    """Another deployment may have written a different URL into the shared registry row."""
+    from sqlalchemy import update
+
+    from app.db.session import get_sessionmaker
+    from app.models import McpServer
+
+    u = await setup(client)
+    async with get_sessionmaker()() as db:
+        await db.execute(update(McpServer).values(url="http://unreachable.invalid:1/mcp"))
+        await db.commit()
+    override_server("cloudwatch", None)  # use the real URL path, which must come from settings
+    from app.mcp.connection import server_urls
+
+    assert "unreachable" not in server_urls()["cloudwatch"]
+    r = await invoke(client, u["h"], "cloudwatch.list_log_groups", {})
+    # The CloudWatch MCP server may or may not be running locally; what matters is that the
+    # invalid DB address was not used.
+    assert "unreachable" not in str(r.json())

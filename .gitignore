@@ -10,3 +10,9 @@ __pycache__/
 node_modules/
 .next/
 .DS_Store
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example

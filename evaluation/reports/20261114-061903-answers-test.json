@@ -1,0 +1,38 @@
+{
+  "environment": {
+    "python": "3.12.13",
+    "machine": "arm64",
+    "system": "Darwin",
+    "embedding_model": "bge-m3",
+    "llm_model": "opspilot-qwen3-8b",
+    "generated_at": "2026-11-14T06:19:03.827929+00:00"
+  },
+  "runs": [
+    {
+      "id": "a809a0c7-b366-4eb3-9a2a-ba387547a424",
+      "config_label": "answers_hybrid_rrf",
+      "config": {
+        "retrieval": "hybrid_rrf",
+        "llm_model": "opspilot-qwen3-8b",
+        "embedding_model": "bge-m3",
+        "context_chunks": 8,
+        "limit": null,
+        "faithfulness": "not measured (no LLM judge yet); see expected_fact_match"
+      },
+      "status": "completed",
+      "metrics": {
+        "abstention_accuracy": 0.9857,
+        "unanswerable_abstention_rate": 1.0,
+        "citation_precision": 0.7261,
+        "citation_coverage": 0.9818,
+        "expected_fact_match": 0.8,
+        "latency_p50_ms": 22708.9,
+        "latency_p95_ms": 46636.9,
+        "questions": 70,
+        "model_errors": 0
+      },
+      "dataset_hash": "c2159c5635cdd6784599a95881b80663f6d17fe05f5037e3a75a2a96d2951562",
+      "split": "test"
+    }
+  ]
+}
