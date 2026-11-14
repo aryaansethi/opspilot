@@ -1,7 +1,7 @@
 import { ExternalLink } from "lucide-react"
 import { SourceBadge } from "@/components/common/badges"
 import { RelativeTime } from "@/components/common/relative-time"
-import { shortTime } from "@/lib/format"
+import { safeHref, shortTime } from "@/lib/format"
 import type { Evidence } from "@/lib/types/api"
 import { cn } from "@/lib/utils"
 
@@ -32,8 +32,8 @@ export function EvidenceCard({ evidence, index, highlighted, className }: { evid
             {e.rank != null && ` · rank ${e.rank}`}
           </span>
         )}
-        {e.url && (
-          <a href={e.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+        {safeHref(e.url) && (
+          <a href={safeHref(e.url)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
             Open source <ExternalLink className="size-3" />
           </a>
         )}

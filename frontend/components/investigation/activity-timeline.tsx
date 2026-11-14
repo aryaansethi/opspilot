@@ -17,24 +17,31 @@ function Line({ icon: Icon, children, at, tone = "text-muted-foreground" }: { ic
   )
 }
 
+/**
+ * The backend's tool_call_started event has no id, so each start is paired with the next completion of
+ * the same tool. Returns the seq numbers of starts that already completed (their row is replaced by the
+ * completed call, so the "Calling …" line is hidden).
+ */
+export function completedStartSeqs(events: InvestigationEvent[]): Set<number> {
+  const finished = new Set<number>()
+  const open = new Map<string, number[]>()
+  for (const e of events) {
+    const tool = String(e.payload.tool ?? "")
+    if (e.type === "tool_call_started") open.set(tool, [...(open.get(tool) ?? []), e.seq])
+    else if (e.type === "tool_call_completed") {
+      const seq = open.get(tool)?.shift()
+      if (seq !== undefined) finished.add(seq)
+    }
+  }
+  return finished
+}
+
 export function ActivityTimeline({ events, toolCalls }: { events: InvestigationEvent[]; toolCalls: ToolCall[] }) {
   const byId = new Map(toolCalls.map((t) => [t.id, t]))
   const seenTools = new Set<string>()
   const items: React.ReactNode[] = []
 
-  // The backend's started event has no id, so pair each start with the next completion of the same tool;
-  // a start that already has its completion is hidden (the completed row replaces it).
-  const finishedStarts = new Set<number>()
-  const openStarts = new Map<string, number[]>()
-  for (const e of events) {
-    const tool = String(e.payload.tool ?? "")
-    if (e.type === "tool_call_started") openStarts.set(tool, [...(openStarts.get(tool) ?? []), e.seq])
-    else if (e.type === "tool_call_completed") {
-      const q = openStarts.get(tool)
-      const seq = q?.shift()
-      if (seq !== undefined) finishedStarts.add(seq)
-    }
-  }
+  const finishedStarts = completedStartSeqs(events)
 
   for (const e of events) {
     const key = `${e.seq}`

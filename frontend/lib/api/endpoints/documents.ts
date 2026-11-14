@@ -10,7 +10,7 @@ import { qk } from "./keys"
 const isBusy = (s: string) => s === "pending_upload" || s === "queued" || s === "processing"
 
 /** Browsers often report "" for .md files; the backend only accepts these three types. */
-function mimeFor(file: File): string {
+export function mimeFor(file: File): string {
   const ext = file.name.toLowerCase().split(".").pop()
   if (ext === "pdf") return "application/pdf"
   if (ext === "md" || ext === "markdown") return "text/markdown"

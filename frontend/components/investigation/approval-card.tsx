@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { errorMessage } from "@/lib/api/client"
 import { useApprove, useReject } from "@/lib/api/endpoints/approvals"
 import type { ApprovalRequest } from "@/lib/types/api"
+import { safeHref } from "@/lib/format"
 
 const tone: Record<ApprovalRequest["status"], Tone> = { pending: "warning", approved: "info", rejected: "neutral", executed: "success", failed: "danger" }
 
@@ -84,9 +85,9 @@ export function ApprovalCard({ approval }: { approval: ApprovalRequest }) {
                 {a.error}
               </p>
             )}
-            {a.result?.url && (
-              <a href={a.result.url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 font-mono text-primary hover:underline">
-                {a.result.key ?? "Open result"} <ExternalLink className="size-3" />
+            {safeHref(a.result?.url) && (
+              <a href={safeHref(a.result?.url)} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 font-mono text-primary hover:underline">
+                {a.result?.key ?? "Open result"} <ExternalLink className="size-3" />
               </a>
             )}
           </div>

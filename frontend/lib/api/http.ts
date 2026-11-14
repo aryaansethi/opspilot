@@ -27,7 +27,7 @@ import type {
 import { ApiError } from "./client"
 
 /** The backend takes lists (source_types/services/environments); the UI filters by one value each. */
-function toBackendFilters(f?: SearchFilters) {
+export function toBackendFilters(f?: SearchFilters) {
   if (!f) return undefined
   const out = {
     ...(f.source_type ? { source_types: [f.source_type] } : {}),

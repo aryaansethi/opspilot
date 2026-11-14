@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   check:
-    name: Type check, lint, build
+    name: Type check, lint, test, build
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -37,6 +37,9 @@ jobs:
 
       - name: Lint
         run: npm run lint
+
+      - name: Unit tests
+        run: npm test
 
       - name: Build
         run: npm run build

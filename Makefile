@@ -30,5 +30,5 @@ seed:          ## Re-seed the demo workspace (the synthetic incident is relative
 demo-down:     ## Stop the container stack (data kept; add -v manually to delete it)
 	docker compose --profile app down
 
-frontend-check: ## Frontend type check, lint and production build (same as CI)
-	cd frontend && npx tsc --noEmit && npm run lint && npm run build
+frontend-check: ## Frontend type check, lint, unit tests and production build (same as CI)
+	cd frontend && npx tsc --noEmit && npm run lint && npm test && npm run build

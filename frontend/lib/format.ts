@@ -26,3 +26,17 @@ export function formatMetric(v: number | undefined, kind: "ratio" | "ms" = "rati
   if (v === undefined || v === null) return "—"
   return kind === "ms" ? `${Math.round(v)} ms` : v.toFixed(3)
 }
+
+/**
+ * Links in evidence and action results come from tool output (GitHub, CloudWatch, Jira), which is
+ * untrusted. Only http(s) URLs are rendered as links; anything else (javascript:, data:, …) is dropped.
+ */
+export function safeHref(url: unknown): string | undefined {
+  if (typeof url !== "string") return undefined
+  try {
+    const u = new URL(url)
+    return u.protocol === "https:" || u.protocol === "http:" ? u.toString() : undefined
+  } catch {
+    return undefined
+  }
+}
