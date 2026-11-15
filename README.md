@@ -181,17 +181,17 @@ retrieval metrics. Every run stores the dataset hash, its configuration and per-
 rankings break ties by content, so a fresh database reproduces the same numbers. An independent run
 from a clean checkout with empty volumes reproduced configurations A, B, C and E exactly.
 
-**Retrieval, dataset v2, held-out test split** (130 answerable questions; measured 2026-11-14, report
-[`20261114-181242-retrieval-test.md`](evaluation/reports/20261114-181242-retrieval-test.md)):
+**Retrieval, dataset v2, held-out test split** (130 answerable questions; measured 2026-11-15, report
+[`20261115-073013-retrieval-test.md`](evaluation/reports/20261115-073013-retrieval-test.md)):
 
 | Strategy | Recall@5 | Recall@10 | MRR | nDCG@10 | p50 latency |
 |---|---|---|---|---|---|
 | A · Keyword (Postgres full-text) | 0.827 | 0.919 | 0.693 | 0.730 | 5 ms |
-| B · Vector (bge-m3) | 0.942 | 0.969 | 0.838 | 0.868 | 158 ms |
-| C · Hybrid (equal-weight RRF) | 0.896 | 0.977 | 0.824 | 0.851 | 165 ms |
-| E · Hybrid (weighted RRF, tuned) | 0.904 | 0.931 | 0.825 | 0.846 | 173 ms |
-| D · Hybrid (RRF) + reranking | **0.950** | **0.981** | **0.909** | **0.918** | 519 ms |
-| F · Weighted hybrid + reranking | **0.950** | **0.981** | **0.909** | **0.918** | 516 ms |
+| B · Vector (bge-m3) | 0.942 | 0.969 | 0.838 | 0.868 | 143 ms |
+| C · Hybrid (equal-weight RRF) | 0.896 | 0.977 | 0.824 | 0.851 | 153 ms |
+| E · Hybrid (weighted RRF, tuned) | 0.904 | 0.931 | 0.825 | 0.846 | 153 ms |
+| D · Hybrid (RRF) + reranking | **0.950** | **0.981** | **0.909** | **0.918** | 448 ms |
+| F · Weighted hybrid + reranking | **0.950** | **0.981** | **0.909** | **0.918** | 455 ms |
 
 What the results show:
 - **Vector search has the best Recall@5 of the strategies without reranking.** Plain hybrid retrieval does
@@ -200,7 +200,7 @@ What the results show:
 - **A tuned weighted fusion (E) improved the tuning split but did not generalize** to the held-out test
   (MRR 0.825 vs 0.824). It is reported here rather than re-tuned on the test set.
 - **Hybrid + reranking gives the best Recall@5, MRR and nDCG@10.** It was the best configuration on every
-  split of both datasets. The cost is about 350 ms of extra latency per query (measured on an Apple Silicon
+  split of both datasets. The cost is about 300 ms of extra latency per query (measured on an Apple Silicon
   laptop), which is small next to LLM generation.
 - **These numbers compare strategies on a small synthetic corpus.** They do not demonstrate
   production-level accuracy.
@@ -235,13 +235,26 @@ default ([report](evaluation/reports/20261114-080026-answers-test.md)):
 
 </details>
 
-**Answer quality on dataset v2** (abstention, citation precision and coverage, and claim-level
-**faithfulness** judged by an LLM) is being measured. It will be published in
-[evaluation/RESULTS.md](evaluation/RESULTS.md) when the run completes. Faithfulness uses the same local
-model family as a judge, a limitation described in [evaluation/README.md](evaluation/README.md).
+**Grounded answers, dataset v2, held-out test split** (155 questions, `opspilot-qwen3-8b`, product
+retrieval: weighted hybrid + reranking; report
+[`20261114-184415-answers-test.md`](evaluation/reports/20261114-184415-answers-test.md)):
+
+| Metric | Result | What it means |
+|---|---|---|
+| Abstention accuracy | 0.994 | Answered answerable questions and declined unanswerable ones; it declined all 25 unanswerable ones. |
+| Faithfulness | 0.938 | Share of 289 answer claims an LLM judge found supported by the evidence they cite (0 judge errors). |
+| Citation coverage | 0.985 | Answers with at least one citation to an expected section. |
+| Citation precision | 0.687 | Share of all citations that point to an expected section. Citing a related section that the labels don't list counts as a miss. |
+| Expected-fact match | 0.844 | Every expected key phrase appears word for word (a strict check that under-counts paraphrases). |
+| Latency | p50 26.4 s, p95 50.0 s | Retrieval plus local generation on one laptop, excluding the judge. |
+
+Faithfulness is judged by the same local model family that writes the answers, so it can share the
+generator's blind spots. Treat it as an estimate, not a guarantee (see
+[evaluation/README.md](evaluation/README.md)). v1 and v2 answer numbers come from different datasets and
+retrieval settings, so they are not directly comparable.
 
 Reproduce with `make validate-data`, `make eval` (retrieval, about 2 min), `make eval-answers`
-(1.5–2 h on a laptop) and `make eval-extra` (about 15 min). Full tables by question kind and topic:
+(about 2 h on a laptop) and `make eval-extra` (about 15 min). Full tables by question kind and topic:
 [evaluation/RESULTS.md](evaluation/RESULTS.md).
 
 ## How the investigation works

@@ -15,7 +15,7 @@ lint:          ## Ruff + mypy
 eval:          ## Retrieval configs A-F on the test split; regenerates evaluation/RESULTS.md (~2 min)
 	uv run --project backend python evaluation/run.py --split test
 
-eval-answers:  ## Grounded answers + LLM faithfulness judge on the test split (~1.5 h on a laptop)
+eval-answers:  ## Grounded answers + LLM faithfulness judge on the test split (~2 h on a laptop)
 	uv run --project backend python evaluation/run.py --answers --split test
 
 eval-results:  ## Rebuild evaluation/RESULTS.md from stored runs without re-running anything

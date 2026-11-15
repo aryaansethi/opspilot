@@ -1,0 +1,45 @@
+{
+  "environment": {
+    "python": "3.12.13",
+    "machine": "arm64",
+    "system": "Darwin",
+    "embedding_model": "bge-m3",
+    "llm_model": "opspilot-qwen3-8b",
+    "generated_at": "2026-11-14T18:44:15.178925+00:00"
+  },
+  "runs": [
+    {
+      "id": "a9e4e525-dfab-4951-a2f4-a13667ce51f2",
+      "config_label": "answers_hybrid_rrf",
+      "config": {
+        "retrieval": "hybrid_rrf",
+        "lexical_weight": 0.5,
+        "lexical_depth": 10,
+        "reranker": "BAAI/bge-reranker-base",
+        "llm_model": "opspilot-qwen3-8b",
+        "embedding_model": "bge-m3",
+        "context_chunks": 8,
+        "limit": null,
+        "faithfulness_judge": "opspilot-qwen3-8b"
+      },
+      "status": "completed",
+      "metrics": {
+        "abstention_accuracy": 0.9935,
+        "unanswerable_abstention_rate": 1.0,
+        "citation_precision": 0.6869,
+        "citation_coverage": 0.9845,
+        "expected_fact_match": 0.8443,
+        "faithfulness": 0.9377,
+        "claims_judged": 289,
+        "judge_errors": 0,
+        "judge_latency_p50_ms": 17693.7,
+        "latency_p50_ms": 26395.0,
+        "latency_p95_ms": 49965.3,
+        "questions": 155,
+        "model_errors": 0
+      },
+      "dataset_hash": "22e55efdd424b57a59221bf372b1dffa9331508e9df6a911948b6e0e93f42d8e",
+      "split": "test"
+    }
+  ]
+}

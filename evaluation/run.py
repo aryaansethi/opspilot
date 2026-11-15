@@ -36,7 +36,6 @@ RETRIEVAL_NOTES = [
     "Synthetic corpus; small sample. These numbers do not predict production performance.",
 ]
 ANSWER_NOTES = [
-    "Retrieval is hybrid RRF (config C); answers come from the local LLM with citation validation.",
     "abstention_accuracy: answers answerable questions and abstains on unanswerable ones.",
     "citation_precision / citation_coverage: cited chunks that are in an expected section / answers with at least one such citation (answered, answerable questions only).",
     "expected_fact_match: every expected key phrase appears verbatim in the answer; it under-counts correct paraphrases.",
@@ -44,6 +43,15 @@ ANSWER_NOTES = [
     "Latency includes retrieval and local LLM generation on one laptop.",
     "Synthetic corpus; small sample. These numbers do not predict production performance.",
 ]
+
+
+def retrieval_note(config: dict) -> str:
+    """Describe the retrieval an answers run actually used, from its stored config."""
+    w, rr = config.get("lexical_weight"), config.get("reranker")
+    how = f"weighted RRF (lexical weight {w}, depth {config.get('lexical_depth')})" if w else "equal-weight RRF (config C)"
+    if rr:
+        how += f", then the `{rr}` cross-encoder"
+    return f"Retrieval: {how}. Answers come from the local LLM with citation and number validation."
 
 
 async def write_results(db) -> Path:  # type: ignore[no-untyped-def]
@@ -104,7 +112,7 @@ async def write_results(db) -> Path:  # type: ignore[no-untyped-def]
             lines += [f"LLM `{answers.config.get('llm_model')}`, {m.get('questions')} questions, "
                       f"run {answers.finished_at:%Y-%m-%d %H:%M} UTC.", "", "| Metric | Value |", "|---|---|"]
             lines += [f"| {k} | {fmt(v)} |" for k, v in m.items() if not isinstance(v, dict)]
-            lines += ["", *[f"- {n}" for n in ANSWER_NOTES]]
+            lines += ["", f"- {retrieval_note(answers.config)}", *[f"- {n}" for n in ANSWER_NOTES]]
         else:
             lines.append("No completed answers run yet (`make eval-answers`).")
         for label, title in (("tool_selection_planner", "Tool selection (investigation planner)"),
@@ -207,7 +215,7 @@ async def main() -> int:
     if args.extra:
         pass
     elif args.answers:
-        lines += ["", "Notes:", *[f"- {n}" for n in ANSWER_NOTES]]
+        lines += ["", "Notes:", *[f"- {retrieval_note(r.config)}" for r in runs[:1]], *[f"- {n}" for n in ANSWER_NOTES]]
     else:
         lines += ["", "Notes:", *[f"- {n}" for n in RETRIEVAL_NOTES]]
     md = "\n".join(lines) + "\n"

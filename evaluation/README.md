@@ -96,7 +96,7 @@ reranker was the best configuration on every split; see the tuning log.
 ```bash
 make validate-data   # check every label against the corpus
 make eval            # retrieval A–F on the v2 test split (~2 min) → RESULTS.md
-make eval-answers    # grounded answers + faithfulness judge on v2 test (~1.5–2 h on a laptop)
+make eval-answers    # grounded answers + faithfulness judge on v2 test (~2 h on a laptop)
 make eval-extra      # tool selection + prompt injection (~15 min)
 make eval-results    # rebuild RESULTS.md from stored runs, no re-run
 ```
