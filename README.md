@@ -162,8 +162,9 @@ in them is synthetic.
 | ![Hybrid search with rank debug](docs/screenshots/05-hybrid-search-debug.png)<br/>**Hybrid search** with each result's lexical rank, vector rank and fused score | ![Grounded answer](docs/screenshots/06-grounded-answer.png)<br/>**Ask**: grounded answer with citations |
 | ![Investigation evidence](docs/screenshots/07-investigation-evidence.png)<br/>**Investigation workflow**: progress, live activity, evidence by source | ![Hypotheses](docs/screenshots/08-investigation-hypotheses.png)<br/>**Hypotheses** with supporting and contradicting evidence |
 | ![Report](docs/screenshots/09-report.png)<br/>**Investigation report** | ![Approval](docs/screenshots/10-approval.png)<br/>**Write action** awaiting human approval |
-| ![Integrations](docs/screenshots/12-integrations.png)<br/>**Integrations**: MCP tools with per-workspace switches | ![Evaluations](docs/screenshots/13-evaluations.png)<br/>**Evaluation dashboard** (dataset v1 run shown) |
+| ![Integrations](docs/screenshots/12-integrations.png)<br/>**Integrations**: MCP tools with per-workspace switches | ![Evaluations](docs/screenshots/13-evaluations.png)<br/>**Evaluation dashboard**: all six retrieval strategies on dataset v2 |
 | ![Audit log](docs/screenshots/16-audit-log.png)<br/>**Audit log** | ![Evaluation drill-down](docs/screenshots/14-evaluation-run.png)<br/>**Per-question** evaluation drill-down |
+| ![Answer quality, tool selection and injection results](docs/screenshots/17-evaluation-quality.png)<br/>**Answer quality**, tool selection and prompt-injection results | |
 
 ## RAG evaluation and benchmarks
 
@@ -397,8 +398,10 @@ CPU-only PyTorch):
 INSTALL_RERANK=true docker compose --profile app up -d --build
 ```
 
-The reranker model (about 1 GB) downloads on first use into the `hf-cache` volume. When running the
-backend natively, use `uv sync --group rerank` instead.
+The reranker model (about 1 GB) downloads on first use into the `hf-cache` volume, so the first query
+that uses it can take a couple of minutes; later queries are fast. In Docker it runs on CPU and is
+slower than the native figures in the evaluation table. When running the backend natively, use
+`uv sync --group rerank` instead.
 
 ### Stop
 
