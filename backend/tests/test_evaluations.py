@@ -10,6 +10,7 @@ from app.db.session import get_sessionmaker
 from app.documents import storage
 from app.evaluations.runner import RETRIEVAL_CONFIGS, load_dataset, run_answers, run_retrieval
 from app.rag.embeddings.provider import HashingEmbeddings
+from app.rag.reranking.reranker import rerank_available
 from tests.conftest import register
 from tests.test_documents import ws_headers
 
@@ -143,11 +144,14 @@ async def test_api_queues_and_reports_runs(client: AsyncClient) -> None:
     assert len(detail["results"]) == 155 and {"hit_at_5", "reciprocal_rank", "latency_ms"} <= set(
         detail["results"][0]
     )
-    all_four = await client.post(f"{API}/evaluations/run", headers=h, json={})
-    assert all_four.status_code == 202
-    assert len(
-        await storage.receive("opspilot-evaluate-test", wait_seconds=1, max_messages=10)
-    ) == len(RETRIEVAL_CONFIGS)
+    run_all = await client.post(f"{API}/evaluations/run", headers=h, json={})
+    assert run_all.status_code == 202
+    # "Run all" queues every configuration this install can run: the reranker is optional (CI).
+    runnable = {
+        label for label, cfg in RETRIEVAL_CONFIGS.items() if rerank_available() or not cfg.rerank
+    }
+    queued = await storage.receive("opspilot-evaluate-test", wait_seconds=1, max_messages=10)
+    assert {json.loads(m["Body"])["config_label"] for m in queued} == runnable
 
 
 async def test_concurrent_workers_index_the_corpus_once() -> None:
